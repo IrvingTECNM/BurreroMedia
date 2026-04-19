@@ -20,10 +20,8 @@ export default function HomeScreen() {
   const { progressHistory, loadProgressHistory } = usePlayerStore();
   const { width } = useWindowDimensions();
   
-  // Intelligent UI: Restrict maximum width on web to prevent infinite stretching
-  // Centers the app organically on large ultra-wide monitors
-  const contentMaxWidth = Platform.OS === 'web' && width > 1600 ? 1600 : '100%';
-  const alignSelf = Platform.OS === 'web' && width > 1600 ? 'center' : 'auto';
+  // Removed artificial max width so the app spans edge-to-edge gracefully
+  // like a true premium streaming application.
 
   useEffect(() => {
     loadProgressHistory();
@@ -87,7 +85,7 @@ export default function HomeScreen() {
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={[styles.content, { maxWidth: contentMaxWidth, alignSelf: alignSelf as any, width: '100%' }]}
+      contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
       refreshControl={
         <RefreshControl

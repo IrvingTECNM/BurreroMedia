@@ -25,6 +25,7 @@ interface MediaCardProps {
   size?: 'sm' | 'lg';
   recommendedBy?: string;
   showRating?: boolean;
+  progress?: number; // 0 to 1
 }
 
 export function MediaCard({
@@ -32,6 +33,7 @@ export function MediaCard({
   size = 'sm',
   recommendedBy,
   showRating = true,
+  progress,
 }: MediaCardProps) {
   const router = useRouter();
   const [isHovered, setIsHovered] = useState(false);
@@ -79,7 +81,15 @@ export function MediaCard({
           placeholder={{ blurhash: 'L6PZfSi_.AyE_3t7t7R**0o#DgR4' }}
         />
 
+        {/* Progress Bar Overlay */}
+        {progress !== undefined && progress > 0 && (
+          <View style={styles.progressBarContainer}>
+            <View style={[styles.progressBarFill, { width: `${Math.min(progress * 100, 100)}%` }]} />
+          </View>
+        )}
+
         {/* Rating badge */}
+
         {showRating && item.vote_average > 0 && (
           <View style={styles.ratingBadge}>
             <Ionicons name="star" size={10} color={Colors.accent} />
@@ -179,6 +189,19 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
   },
+  progressBarContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: Colors.primary,
+  },
 });
+
 
 export default MediaCard;

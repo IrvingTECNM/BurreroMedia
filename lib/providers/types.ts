@@ -22,6 +22,7 @@ export interface StreamResult {
   language: string;        // "es-lat", "es-es", "en"
   provider: string;        // Provider name
   type: 'direct' | 'embed' | 'torrent';
+  isDownload?: boolean;   // Whether this is a direct download link (Mega, 1fichier, etc.)
   size?: string;           // "2.1 GB"
   seeds?: number;          // For torrents
 }

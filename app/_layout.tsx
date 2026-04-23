@@ -44,15 +44,16 @@ const BurreroTheme = {
 };
 
 export default function RootLayout() {
-  const { loadProfiles } = useAuthStore();
+  const { restoreSession, loadProfiles } = useAuthStore();
   const { initializeProviders } = useProvidersStore();
   const [loaded, error] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
 
-  // Load state on mount
+  // Restore saved session and load data on mount
   useEffect(() => {
-    loadProfiles();
+    restoreSession();  // Synchronous — reads localStorage
+    loadProfiles();    // Async — fetches from Supabase
     initializeProviders();
   }, []);
 
@@ -105,5 +106,3 @@ export default function RootLayout() {
     </QueryClientProvider>
   );
 }
-
-

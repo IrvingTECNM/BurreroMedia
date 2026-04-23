@@ -15,7 +15,7 @@ import {
   Platform,
   Animated,
 } from 'react-native';
-import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
+import { Video, ResizeMode, AVPlaybackStatus, Audio } from 'expo-av';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -45,6 +45,14 @@ export default function PlayerScreen() {
   const [isMuted, setIsMuted] = useState(false);
   const [isProgressBarHovered, setIsProgressBarHovered] = useState(false);
   const [progressBarWidth, setProgressBarWidth] = useState(0);
+
+  useEffect(() => {
+    Audio.setAudioModeAsync({
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: true,
+      shouldDuckAndroid: true,
+    }).catch(console.error);
+  }, []);
 
   // Animation values
   const opacityAnim = useRef(new Animated.Value(1)).current;
@@ -155,8 +163,17 @@ export default function PlayerScreen() {
   };
 
   const toggleFullscreen = async () => {
-    if (!videoRef.current) return;
-    await videoRef.current.presentFullscreenPlayer();
+    if (Platform.OS === 'web') {
+      const el = document.getElementById('burrero-player-wrapper');
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(console.error);
+      } else {
+        el?.requestFullscreen().catch(console.error);
+      }
+    } else {
+      if (!videoRef.current) return;
+      await videoRef.current.presentFullscreenPlayer();
+    }
   };
 
   // Double tap detection
@@ -210,19 +227,34 @@ export default function PlayerScreen() {
   } : {};
 
   return (
-    <View style={styles.container} {...webHoverProps as any}>
+    <View id="burrero-player-wrapper" style={styles.container} {...webHoverProps as any}>
       {/* Background container to prevent clicking out */}
       <View style={StyleSheet.absoluteFill} />
 
       {/* Video Player */}
       <View style={styles.videoContainer}>
+        {Platform.OS === 'web' && (
+          <div dangerouslySetInnerHTML={{ __html: `
+            <style>
+              video {
+                object-fit: contain !important;
+                width: 100% !important;
+                height: 100% !important;
+                position: absolute !important;
+                top: 0 !important;
+                left: 0 !important;
+              }
+            </style>
+          `}} />
+        )}
         <Video
           ref={videoRef}
           source={{ uri: url || '' }}
-          style={styles.video}
+          style={[styles.video, { width: '100%', height: '100%' }]}
           resizeMode={ResizeMode.CONTAIN}
           shouldPlay
           isMuted={isMuted}
+          volume={1.0}
           onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
           useNativeControls={false}
         />
@@ -253,7 +285,7 @@ export default function PlayerScreen() {
         {/* Animated Controls Overlay */}
         <Animated.View 
           style={[styles.controlsOverlay, { opacity: opacityAnim }]}
-          pointerEvents={showControls ? 'auto' : 'none'}
+          pointerEvents={showControls ? 'box-none' : 'none'}
         >
           {/* Top Gradient & Bar */}
           <LinearGradient
@@ -288,7 +320,11 @@ export default function PlayerScreen() {
                 onLayout={(e) => setProgressBarWidth(e.nativeEvent.layout.width)}
                 onPress={(e) => {
                   if (progressBarWidth > 0) {
-                    handleSeekTo(e.nativeEvent.locationX / progressBarWidth);
+                    const natEvent = e.nativeEvent as any;
+                    const clickX = Platform.OS === 'web' && natEvent.offsetX !== undefined 
+                      ? natEvent.offsetX 
+                      : natEvent.locationX;
+                    handleSeekTo(clickX / progressBarWidth);
                   }
                 }}
                 style={styles.progressBarHitbox}
@@ -369,6 +405,25 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     flexDirection: 'row',
     zIndex: 1,
+  },
+  extractionContainer: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#0a0a0f',
+    zIndex: 5,
+    gap: Spacing.md,
+  },
+  extractionText: {
+    ...Typography.h3,
+    color: Colors.textPrimary,
+    marginTop: Spacing.md,
+  },
+  extractionSubText: {
+    ...Typography.bodySmall,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    maxWidth: '80%',
   },
   sideZone: {
     width: '30%',

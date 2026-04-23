@@ -141,7 +141,22 @@ export async function getGenres(mediaType: MediaType) {
   return data.genres;
 }
 
+export async function getRecommendations(id: number, mediaType: MediaType = 'movie') {
+  const data = await fetchTMDB<{ results: TMDBMovie[] }>(`/${mediaType}/${id}/recommendations`);
+  return data.results;
+}
+
+export async function getDiscover(mediaType: MediaType = 'movie', genreIds: number[] = []) {
+  const params: Record<string, string> = {
+    sort_by: 'popularity.desc',
+    with_genres: genreIds.join(','),
+  };
+  const data = await fetchTMDB<{ results: TMDBMovie[] }>(`/discover/${mediaType}`, params);
+  return data.results;
+}
+
 export function getTitle(item: TMDBMovie): string {
+
   return item.title || item.name || 'Sin título';
 }
 

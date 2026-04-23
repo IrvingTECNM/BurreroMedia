@@ -47,7 +47,7 @@ const STORAGE_KEY = 'burreromedia-providers';
 
 export const useProvidersStore = create<ProvidersState>((set, get) => ({
   installedProviders: [],
-  isLoading: false,
+  isLoading: true, // Prevents aggressive early fetches before storage is read
 
   initializeProviders: async () => {
     set({ isLoading: true });
@@ -55,10 +55,48 @@ export const useProvidersStore = create<ProvidersState>((set, get) => ({
     // Load from local storage manually
     try {
       const stored = await safeStorage.getItem(STORAGE_KEY);
+      let parsed: InstalledProvider[] = [];
       if (stored) {
-        const parsed = JSON.parse(stored) as InstalledProvider[];
-        set({ installedProviders: parsed });
+        parsed = JSON.parse(stored) as InstalledProvider[];
       }
+      
+      // Auto-install built-in providers (Serverless)
+      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://tunombre.vercel.app';
+      
+      // Force update broken cached URLs
+      parsed = parsed.map(p => {
+        if (p.id === 'com.burreromedia.cinecalidad' && !p.url.endsWith('.json')) {
+          return { ...p, url: `${origin}/api/cinecalidad/manifest.json` };
+        }
+        if (p.id === 'com.burreromedia.cuevana' && !p.url.endsWith('.json')) {
+          return { ...p, url: `${origin}/api/cuevana/manifest.json` };
+        }
+        return p;
+      });
+      
+      // Cinecalidad
+      if (!parsed.some(p => p.id === 'com.burreromedia.cinecalidad')) {
+        parsed.push({
+           url: `${origin}/api/cinecalidad/manifest.json`,
+           id: 'com.burreromedia.cinecalidad',
+           name: 'Cinecalidad (Integrado)',
+           version: '1.0.0',
+        });
+      }
+
+      // Cuevana3
+      if (!parsed.some(p => p.id === 'com.burreromedia.cuevana')) {
+        parsed.push({
+           url: `${origin}/api/cuevana/manifest.json`,
+           id: 'com.burreromedia.cuevana',
+           name: 'Cuevana3 (Integrado)',
+           version: '1.0.0',
+        });
+      }
+
+      await safeStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+
+      set({ installedProviders: parsed });
     } catch (err) {
       console.warn('Failed to load providers from storage', err);
     }

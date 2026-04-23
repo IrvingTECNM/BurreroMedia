@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>HLS test</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+</head>
+<body>
+    <video id="video" controls autoplay width="800"></video>
+    <script>
+        fetch('http://localhost:8081/api/cinecalidad/stream/movie/tej0310ztcvd')
+            .then(r=>r.json())
+            .then(data => {
+                const stream = data.streams.find(s => s.url.includes('filemoon') || s.url.includes('edge1'));
+                if (!stream) { console.error('No filemoon stream'); return; }
+                const url = stream.url;
+                console.log("Playing:", url);
+                
+                var video = document.getElementById('video');
+                if (Hls.isSupported()) {
+                    var hls = new Hls({ debug: true });
+                    hls.loadSource(url);
+                    hls.attachMedia(video);
+                    hls.on(Hls.Events.ERROR, function(event, data) {
+                        console.error('HLS error:', data);
+                    });
+                }
+            });
+    </script>
+</body>
+</html>

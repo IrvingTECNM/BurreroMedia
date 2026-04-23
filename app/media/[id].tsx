@@ -14,6 +14,7 @@ import {
   ActivityIndicator,
   useWindowDimensions,
   Platform,
+  Linking,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -44,6 +45,7 @@ import {
   BorderRadius,
   Shadows,
 } from '@/constants/theme';
+import { useProvidersStore } from '@/stores/providersStore';
 
 // Cinematic ratio calculated dynamically in component
 
@@ -76,12 +78,59 @@ export default function MediaDetailScreen() {
     enabled: mediaId > 0,
   });
 
-  // Fetch streams from providers
-  const { data: streams, isLoading: streamsLoading } = useQuery({
+  const { isLoading: providersLoading } = useProvidersStore();
+  const [liveStreams, setLiveStreams] = useState<StreamResult[]>([]);
+  const [activeTab, setActiveTab] = useState<'streaming' | 'downloads'>('streaming');
+
+  // Fetch streams from providers progressively
+  const { data: cachedData, isLoading: streamsLoading } = useQuery({
     queryKey: queryKeys.streams(id || '', mediaType),
-    queryFn: () => providerManager.searchStreams(id || '', mediaType),
-    enabled: !!id,
+    queryFn: async () => {
+      // Reset only if we don't have cached data yet
+      setLiveStreams(prev => prev.length > 0 ? prev : []);
+      
+      const qualityOrder: Record<string, number> = {
+        '4K': 4,
+        '1080p': 3,
+        '720p': 2,
+        '480p': 1,
+        'Unknown': 0,
+      };
+
+      // Call searchStreams with a progressive append callback
+      const result = await providerManager.searchStreams(
+        id || '', 
+        mediaType,
+        undefined,
+        undefined,
+        (newStreams) => {
+          setLiveStreams(prev => {
+            // Deduplicate logic just in case an addon duplicates streams
+            const existingUrls = new Set(prev.map(s => s.url));
+            const distinctNew = newStreams.filter(s => !existingUrls.has(s.url));
+            
+            if (distinctNew.length === 0) return prev;
+            
+            const merged = [...prev, ...distinctNew];
+            // Sort highest quality first
+            merged.sort((a, b) => (qualityOrder[b.quality] || 0) - (qualityOrder[a.quality] || 0));
+            return merged;
+          });
+        }
+      );
+      
+      return result;
+    },
+    enabled: !!id && !providersLoading,
+    staleTime: 1000 * 60 * 15, // Cache the streams for 15 minutes to prevent re-scraping instantly
   });
+
+  // Hydrate liveStreams with cached data instantly when returning to the page
+  React.useEffect(() => {
+    if (cachedData?.streams && cachedData.streams.length > 0) {
+      setLiveStreams(cachedData.streams);
+    }
+  }, [cachedData]);
 
   if (isLoading || !details) {
     return (
@@ -99,10 +148,14 @@ export default function MediaDetailScreen() {
     ? `${details.number_of_seasons} temporada${details.number_of_seasons > 1 ? 's' : ''}`
     : '';
 
+  const streamingLinks = liveStreams.filter(s => !s.isDownload);
+  const downloadLinks = liveStreams.filter(s => s.isDownload);
+  const currentStreams = activeTab === 'streaming' ? streamingLinks : downloadLinks;
+
   return (
     <View style={styles.container}>
-      <ScrollView
-        style={{ flex: 1 }}
+      <ScrollView 
+        style={styles.container} 
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
@@ -177,11 +230,11 @@ export default function MediaDetailScreen() {
           <Button
             title="Ver Ahora"
             onPress={() => {
-              if (streams?.streams?.[0]) {
+              if (liveStreams?.[0]) {
                 router.push({
                   pathname: '/player',
                   params: {
-                    url: streams.streams[0].url,
+                    url: liveStreams[0].url,
                     title: getTitle(details),
                     tmdbId: details.id.toString(),
                     mediaType: mediaType,
@@ -245,22 +298,76 @@ export default function MediaDetailScreen() {
       {/* Streams / Sources */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Fuentes Disponibles</Text>
-        {streamsLoading ? (
+        
+        {liveStreams.length === 0 && streamsLoading ? (
           <ActivityIndicator color={Colors.primary} style={{ marginVertical: Spacing.lg }} />
-        ) : streams && streams.streams.length > 0 ? (
+        ) : liveStreams.length > 0 ? (
           <View style={styles.streamsList}>
-            {streams.streams.map((stream, index) => (
+            <View style={styles.tabContainer}>
+              <HapticPressable 
+                onPress={() => setActiveTab('streaming')}
+                style={[styles.tab, activeTab === 'streaming' && styles.activeTab]}
+              >
+                <Text style={[styles.tabText, activeTab === 'streaming' && styles.activeTabText]}>
+                  Streaming ({streamingLinks.length})
+                </Text>
+              </HapticPressable>
+              
+              <HapticPressable 
+                onPress={() => setActiveTab('downloads')}
+                style={[styles.tab, activeTab === 'downloads' && styles.activeTab]}
+              >
+                <Text style={[styles.tabText, activeTab === 'downloads' && styles.activeTabText]}>
+                  Descargas ({downloadLinks.length})
+                </Text>
+              </HapticPressable>
+            </View>
+
+            {currentStreams.map((stream, index) => (
               <StreamItem
                 key={index}
                 stream={stream}
-                onPress={() =>
-                  router.push({
-                    pathname: '/player',
-                    params: { url: stream.url, title: getTitle(details) },
-                  })
-                }
+                onPress={() => {
+                  if (stream.isDownload) {
+                    Platform.OS === 'web' ? window.open(stream.url, '_blank') : Linking.openURL(stream.url);
+                  } else if (stream.behaviorHints && !stream.behaviorHints.isDirect) {
+                    // Indirect embed link (e.g. Voe) -> Open external browser/tab
+                    Platform.OS === 'web' ? window.open(stream.url, '_blank') : Linking.openURL(stream.url);
+                  } else {
+                    router.push({
+                      pathname: '/player',
+                      params: { 
+                        url: stream.url, 
+                        title: getTitle(details),
+                        tmdbId: details.id.toString(),
+                        mediaType: mediaType,
+                      },
+                    });
+                  }
+                }}
               />
             ))}
+
+            {currentStreams.length === 0 && !streamsLoading && (
+              <View style={styles.emptyTab}>
+                <Ionicons 
+                  name={activeTab === 'streaming' ? 'play-circle-outline' : 'download-outline'} 
+                  size={48} 
+                  color={Colors.textTertiary} 
+                />
+                <Text style={styles.emptyTabText}>
+                  No hay {activeTab === 'streaming' ? 'streaming' : 'links de descarga'} disponibles aún.
+                </Text>
+              </View>
+            )}
+            
+            {/* Show spinner below the list if still searching for more streams */}
+            {streamsLoading && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: Spacing.md, gap: Spacing.sm }}>
+                <ActivityIndicator size="small" color={Colors.primary} />
+                <Text style={{ color: Colors.textTertiary, fontSize: 12 }}>Buscando más fuentes...</Text>
+              </View>
+            )}
           </View>
         ) : (
           <View style={styles.noStreams}>
@@ -301,7 +408,7 @@ function StreamItem({ stream, onPress }: { stream: StreamResult; onPress: () => 
     <HapticPressable onPress={onPress} style={styles.streamItem}>
       <View style={styles.streamIcon}>
         <Ionicons
-          name={stream.type === 'torrent' ? 'magnet-outline' : 'play-circle-outline'}
+          name={stream.isDownload ? 'download-outline' : (stream.type === 'torrent' ? 'magnet-outline' : 'play-circle-outline')}
           size={24}
           color={Colors.primary}
         />
@@ -442,6 +549,47 @@ const styles = StyleSheet.create({
   },
   streamsList: {
     gap: Spacing.sm,
+  },
+  badge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginLeft: Spacing.sm,
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: BorderRadius.md,
+    padding: 4,
+    marginBottom: Spacing.lg,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: BorderRadius.sm,
+  },
+  activeTab: {
+    backgroundColor: Colors.primary,
+  },
+  tabText: {
+    ...Typography.bodySmall,
+    color: Colors.textSecondary,
+    fontWeight: '600',
+  },
+  activeTabText: {
+    color: '#000',
+  },
+  emptyTab: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.xl * 2,
+    gap: Spacing.md,
+  },
+  emptyTabText: {
+    ...Typography.bodySmall,
+    color: Colors.textTertiary,
+    textAlign: 'center',
   },
   streamItem: {
     flexDirection: 'row',

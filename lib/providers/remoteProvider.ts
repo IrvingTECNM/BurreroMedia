@@ -59,7 +59,7 @@ export class RemoteProvider implements IProvider {
       }
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const timeoutId = setTimeout(() => controller.abort(), 45000); // 45 seconds timeout for scraping
       const res = await fetch(resourceUrl, { signal: controller.signal });
       clearTimeout(timeoutId);
 

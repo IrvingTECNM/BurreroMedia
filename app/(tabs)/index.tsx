@@ -5,27 +5,48 @@
  * scrollable rows of trending, popular, and top-rated content.
  * Powered by TanStack Query for caching and stale-while-revalidate.
  */
-import React, { useEffect } from 'react';
-import { ScrollView, StyleSheet, RefreshControl, View, Text, useWindowDimensions, Platform } from 'react-native';
+import React, { useEffect, useMemo } from 'react';
+import { ScrollView, StyleSheet, RefreshControl, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { HeroBanner } from '@/components/HeroBanner';
 import { MediaRow } from '@/components/MediaRow';
 import { queryKeys } from '@/lib/query-client';
-import { getTrending, getPopular, getTopRated, getNowPlaying, getDetails } from '@/lib/tmdb';
-import { Colors, Spacing, Typography } from '@/constants/theme';
+import { getTrending, getPopular, getTopRated, getNowPlaying, getDetails, getRecommendations, getDiscover } from '@/lib/tmdb';
+import { Colors, Spacing } from '@/constants/theme';
 import { usePlayerStore } from '@/stores/playerStore';
 
 export default function HomeScreen() {
   const { progressHistory, loadProgressHistory } = usePlayerStore();
-  const { width } = useWindowDimensions();
   
-  // Removed artificial max width so the app spans edge-to-edge gracefully
-  // like a true premium streaming application.
-
   useEffect(() => {
     loadProgressHistory();
-  }, [loadProgressHistory]);
+  }, []);
+
+  // Fetch Recommended items based on history
+  const recentTmdbIds = useMemo(
+    () => (progressHistory || []).slice(0, 3).map(p => p?.tmdb_id),
+    [progressHistory]
+  );
+
+  const recommendedItems = useQuery({
+    queryKey: ['personalizedRecommendations', recentTmdbIds],
+    queryFn: async () => {
+      if (progressHistory.length > 0) {
+        const recent = progressHistory.slice(0, 3);
+        const allRecs = await Promise.all(
+          recent.map(p => getRecommendations(parseInt(p.tmdb_id, 10), p.media_type))
+        );
+        const flattened = allRecs.flat();
+        const unique = flattened.filter((item, index, self) => 
+          index === self.findIndex((t) => t.id === item.id)
+        );
+        return unique.slice(0, 20);
+      } else {
+        return getDiscover('movie');
+      }
+    },
+  });
 
   // Fetch all data in parallel via TanStack Query
   const trending = useQuery({
@@ -53,9 +74,14 @@ export default function HomeScreen() {
     queryFn: () => getNowPlaying(),
   });
 
-  // Fetch details for continue watching items (limited to 5 for now)
+  // Fetch details for continue watching items (limited to 5)
+  const continueWatchingIds = useMemo(
+    () => (progressHistory || []).slice(0, 5).map(p => p?.tmdb_id),
+    [progressHistory]
+  );
+
   const continueWatchingItems = useQuery({
-    queryKey: ['continueWatchingItems', progressHistory.map((p) => p.tmdb_id)],
+    queryKey: ['continueWatchingItems', continueWatchingIds],
     queryFn: async () => {
       const items = await Promise.all(
         progressHistory.slice(0, 5).map((p) => getDetails(parseInt(p.tmdb_id, 10), p.media_type))
@@ -79,7 +105,14 @@ export default function HomeScreen() {
     loadProgressHistory();
   };
 
-  // Hero: first trending movie
+  // Memoize progress mapping
+  const progressMap = useMemo(() => {
+    return (progressHistory || []).reduce((acc, p) => ({
+      ...acc,
+      [p.tmdb_id]: p.duration > 0 ? p.position_seconds / p.duration : 0
+    }), {} as Record<string, number>);
+  }, [progressHistory]);
+
   const heroItem = trending.data?.[0] || null;
 
   return (
@@ -107,8 +140,19 @@ export default function HomeScreen() {
               icon={<Ionicons name="time" size={20} color={Colors.primary} />}
               data={continueWatchingItems.data}
               isLoading={continueWatchingItems.isLoading}
+              progressMap={progressMap}
             />
         </View>
+      )}
+
+      {/* Personalized Recommendations */}
+      {recommendedItems.data && recommendedItems.data.length > 0 && (
+        <MediaRow
+          title="Recomendados para ti"
+          icon={<Ionicons name="sparkles" size={20} color={Colors.accent} />}
+          data={recommendedItems.data}
+          isLoading={recommendedItems.isLoading}
+        />
       )}
 
       {/* Trending Movies */}
@@ -160,7 +204,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   content: {
-    paddingBottom: 100, // Extra space for tab bar
+    paddingBottom: 100,
   },
   continueWatchingContainer: {
     marginTop: Spacing.md,

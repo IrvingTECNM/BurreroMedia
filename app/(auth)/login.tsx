@@ -14,29 +14,40 @@ import {
   KeyboardAvoidingView,
   Platform,
   useWindowDimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useAuthStore } from '@/stores/authStore';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/theme';
 import { HapticPressable } from '@/components/ui/HapticPressable';
-import { Button } from '@/components/ui/Button';
 
 export default function LoginScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { allProfiles, loadProfiles, login, isLoading } = useAuthStore();
+  const { allProfiles, loadProfiles, login, isLoading, isAuthenticated, currentUser } = useAuthStore();
 
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
   const [pin, setPin] = useState('');
   const [showPinModal, setShowPinModal] = useState(false);
   const [pinError, setPinError] = useState(false);
 
+  // Auto-redirect if already authenticated
   useEffect(() => {
-    loadProfiles();
-  }, [loadProfiles]);
+    if (isAuthenticated && currentUser) {
+      router.replace('/(tabs)');
+    }
+  }, [isAuthenticated, currentUser]);
+
+  // Load profiles on mount (only if not already loaded)
+  useEffect(() => {
+    if (allProfiles.length === 0 && !isLoading) {
+      loadProfiles();
+    }
+  }, []);
 
   const handleProfileSelect = (profileId: string, hasPin: boolean) => {
     if (hasPin) {
@@ -80,50 +91,61 @@ export default function LoginScreen() {
       }]}>
         <Text style={styles.title}>¿Quién está viendo ahora?</Text>
 
-        {isLoading ? (
-          <Text style={styles.loadingText}>Cargando perfiles...</Text>
+        {isLoading && allProfiles.length === 0 ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={Colors.primary} />
+            <Text style={styles.loadingText}>Cargando perfiles...</Text>
+          </View>
         ) : (
           <ScrollView style={{ width: '100%', maxHeight: 400 }} contentContainerStyle={styles.gridContent}>
             <View style={styles.gridRow}>
-              {[...allProfiles, { id: 'add_new', isAddButton: true }].map((item: any) => {
+              {[...allProfiles, { id: 'add_new', isAddButton: true }].map((item: any, index: number) => {
                 if (item.isAddButton) {
                   return (
-                    <HapticPressable
-                      key={item.id}
-                      style={styles.profileContainer}
-                      onPress={() => router.push('/(auth)/create-profile')}
+                    <Animated.View 
+                      key={item.id} 
+                      entering={FadeInDown.delay(index * 100).springify()}
                     >
-                      <View style={[styles.avatar, styles.addAvatar]}>
-                        <Ionicons name="add" size={48} color={Colors.textPrimary} />
-                      </View>
-                      <Text style={styles.profileName}>Agregar perfil</Text>
-                    </HapticPressable>
+                      <HapticPressable
+                        style={styles.profileContainer}
+                        onPress={() => router.push('/(auth)/create-profile')}
+                      >
+                        <View style={[styles.avatar, styles.addAvatar]}>
+                          <Ionicons name="add" size={48} color={Colors.textPrimary} />
+                        </View>
+                        <Text style={styles.profileName}>Agregar perfil</Text>
+                      </HapticPressable>
+                    </Animated.View>
                   );
                 }
 
                 return (
-                  <HapticPressable
-                    key={item.id}
-                    style={styles.profileContainer}
-                    onPress={() => handleProfileSelect(item.id, !!item.pin)}
+                  <Animated.View 
+                    key={item.id} 
+                    entering={FadeInDown.delay(index * 100).springify()}
                   >
-                    <View style={[styles.avatar, { backgroundColor: item.avatar_color }, Shadows.md]}>
-                      <Text style={styles.avatarLetter}>
-                        {item.display_name.charAt(0).toUpperCase()}
+                    <HapticPressable
+                      style={styles.profileContainer}
+                      onPress={() => handleProfileSelect(item.id, !!item.pin)}
+                    >
+                      <View style={[styles.avatar, { backgroundColor: item.avatar_color }, Shadows.md]}>
+                        <Text style={styles.avatarLetter}>
+                          {item.display_name.charAt(0).toUpperCase()}
+                        </Text>
+                      </View>
+                      <Text style={styles.profileName} numberOfLines={1}>
+                        {item.display_name}
                       </Text>
-                    </View>
-                    <Text style={styles.profileName} numberOfLines={1}>
-                      {item.display_name}
-                    </Text>
-                    {item.pin && (
-                      <Ionicons
-                        name="lock-closed"
-                        size={14}
-                        color={Colors.textTertiary}
-                        style={styles.lockIcon}
-                      />
-                    )}
-                  </HapticPressable>
+                      {item.pin && (
+                        <Ionicons
+                          name="lock-closed"
+                          size={14}
+                          color={Colors.textTertiary}
+                          style={styles.lockIcon}
+                        />
+                      )}
+                    </HapticPressable>
+                  </Animated.View>
                 );
               })}
             </View>
@@ -167,7 +189,6 @@ export default function LoginScreen() {
                 setPin(newPin);
                 setPinError(false);
                 if (newPin.length === 4 && selectedProfileId) {
-                  // Validate automatically
                   handleLogin(selectedProfileId, newPin);
                 }
               }}
@@ -207,13 +228,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: Spacing.xl,
-    paddingBottom: 100, // Offset for visual balance
+    paddingBottom: 100,
   },
   title: {
     ...Typography.h2,
     color: Colors.textPrimary,
     marginBottom: Spacing.xxxl,
     textAlign: 'center',
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    gap: Spacing.md,
   },
   loadingText: {
     ...Typography.body,

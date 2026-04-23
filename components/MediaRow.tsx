@@ -17,6 +17,7 @@ interface MediaRowProps {
   isLoading?: boolean;
   icon?: React.ReactNode;
   cardSize?: 'sm' | 'lg';
+  progressMap?: Record<string, number>;
 }
 
 export function MediaRow({
@@ -25,6 +26,7 @@ export function MediaRow({
   isLoading = false,
   icon,
   cardSize = 'sm',
+  progressMap,
 }: MediaRowProps) {
   if (!isLoading && data.length === 0) return null;
 
@@ -46,18 +48,23 @@ export function MediaRow({
       ) : (
         <FlatList
           data={data}
-          keyExtractor={(item) => item.id.toString()}
+          keyExtractor={(item) => item.id.toString() + (item.media_type || '')}
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.listContent}
           renderItem={({ item }) => (
-            <MediaCard item={item} size={cardSize} />
+            <MediaCard 
+              item={item} 
+              size={cardSize} 
+              progress={progressMap?.[item.id.toString()]}
+            />
           )}
         />
       )}
     </View>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: {

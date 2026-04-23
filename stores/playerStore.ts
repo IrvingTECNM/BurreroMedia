@@ -2,6 +2,7 @@
  * Player Store — Zustand
  *
  * Manages video playback progress and syncs with Supabase.
+ * No persist middleware — progress is loaded from Supabase on login.
  */
 import { create } from 'zustand';
 import { supabase, WatchingProgress } from '@/lib/supabase';
@@ -46,13 +47,6 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   updateProgress: async (data) => {
     const userId = useAuthStore.getState().currentUser?.id;
     if (!userId) return;
-
-    // Only save if watched more than 5% and less than 95% 
-    // to avoid cluttering "Continue watching" with finished or just-opened stuff
-    const progressPercent = data.duration > 0 ? (data.currentTime / data.duration) : 0;
-    
-    // If finished, maybe we should still save it but mark it 'watched' in watchlist, 
-    // but for now let's just save the progress.
 
     const newEntry = {
       user_id: userId,

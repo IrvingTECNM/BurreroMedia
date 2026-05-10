@@ -17,6 +17,8 @@ export const queryClient = new QueryClient({
       retry: 2,
       // Don't refetch on window focus for mobile (avoids unnecessary API calls)
       refetchOnWindowFocus: false,
+      // Prevent queries from pausing indefinitely if the browser falsely reports offline
+      networkMode: 'always',
     },
   },
 });

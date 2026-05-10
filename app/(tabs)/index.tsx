@@ -6,15 +6,16 @@
  * Powered by TanStack Query for caching and stale-while-revalidate.
  */
 import React, { useEffect, useMemo } from 'react';
-import { ScrollView, StyleSheet, RefreshControl, View } from 'react-native';
+import { ScrollView, StyleSheet, RefreshControl, View, Text } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { HeroBanner } from '@/components/HeroBanner';
 import { MediaRow } from '@/components/MediaRow';
 import { queryKeys } from '@/lib/query-client';
 import { getTrending, getPopular, getTopRated, getNowPlaying, getDetails, getRecommendations, getDiscover } from '@/lib/tmdb';
-import { Colors, Spacing } from '@/constants/theme';
+import { Colors, Spacing, Typography } from '@/constants/theme';
 import { usePlayerStore } from '@/stores/playerStore';
+import { Button } from '@/components/ui/Button';
 
 export default function HomeScreen() {
   const { progressHistory, loadProgressHistory } = usePlayerStore();
@@ -113,7 +114,30 @@ export default function HomeScreen() {
     }), {} as Record<string, number>);
   }, [progressHistory]);
 
-  const heroItem = trending.data?.[0] || null;
+  const isError = trending.isError || popularMovies.isError || nowPlaying.isError;
+
+  if (isError && !trending.data) {
+    return (
+      <View style={{ flex: 1, backgroundColor: Colors.background, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+        <Ionicons name="cloud-offline-outline" size={64} color={Colors.textTertiary} />
+        <Text style={{ color: Colors.textPrimary, ...Typography.h3, marginTop: 16, textAlign: 'center' }}>
+          Error al cargar la cartelera
+        </Text>
+        <Text style={{ color: Colors.textTertiary, textAlign: 'center', marginTop: 8 }}>
+          No pudimos conectar con los servidores de video. Revisa tu conexión.
+        </Text>
+        <Button 
+          title="Reintentar" 
+          onPress={() => {
+            trending.refetch();
+            popularMovies.refetch();
+            nowPlaying.refetch();
+          }}
+          style={{ marginTop: 24 }}
+        />
+      </View>
+    );
+  }
 
   return (
     <ScrollView
@@ -130,7 +154,7 @@ export default function HomeScreen() {
       }
     >
       {/* Hero Banner */}
-      <HeroBanner item={heroItem} isLoading={trending.isLoading} />
+      <HeroBanner item={trending.data?.[0] || null} isLoading={trending.isLoading} />
 
       {/* Continue Watching */}
       {continueWatchingItems.data && continueWatchingItems.data.length > 0 && (

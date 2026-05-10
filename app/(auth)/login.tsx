@@ -42,26 +42,12 @@ export default function LoginScreen() {
     }
   }, [isAuthenticated, currentUser]);
 
-  // Load profiles on mount and auto-select if only one exists or if we want to bypass
+  // Load profiles on mount (only if not already loaded)
   useEffect(() => {
-    async function loadAndAutoLogin() {
-      if (allProfiles.length === 0 && !isLoading) {
-        await loadProfiles();
-      }
-      
-      const profiles = useAuthStore.getState().allProfiles;
-      if (profiles.length > 0 && !isAuthenticated) {
-        // Auto-login to the first profile that doesn't have a PIN
-        // Or just the first one if we want to be aggressive
-        const guestProfile = profiles.find(p => !p.pin) || profiles[0];
-        if (guestProfile) {
-          handleLogin(guestProfile.id);
-        }
-      }
+    if (allProfiles.length === 0 && !isLoading) {
+      loadProfiles();
     }
-    
-    loadAndAutoLogin();
-  }, [allProfiles.length, isLoading]);
+  }, []);
 
   const handleProfileSelect = (profileId: string, hasPin: boolean) => {
     if (hasPin) {

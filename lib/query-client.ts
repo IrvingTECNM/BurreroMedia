@@ -11,8 +11,8 @@ export const queryClient = new QueryClient({
     queries: {
       // Cache data for 5 minutes before considering stale
       staleTime: 5 * 60 * 1000,
-      // Keep unused data in cache for 30 minutes
-      gcTime: 30 * 60 * 1000,
+      // Keep unused data in cache for 2 hours (allows stream reuse across profiles)
+      gcTime: 2 * 60 * 60 * 1000,
       // Retry failed requests up to 2 times
       retry: 2,
       // Don't refetch on window focus for mobile (avoids unnecessary API calls)

@@ -26,15 +26,18 @@ import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { HapticPressable } from '@/components/ui/HapticPressable';
 import { RecommendModal } from '@/components/RecommendModal';
+import { MediaRow } from '@/components/MediaRow';
 import { queryKeys } from '@/lib/query-client';
 import {
   getDetails,
+  getSeasonDetails,
   getBackdropUrl,
   getImageUrl,
   getTitle,
   getReleaseYear,
   getRatingStars,
   MediaType,
+  TMDBSeason,
 } from '@/lib/tmdb';
 import { providerManager } from '@/lib/providers/providerManager';
 import { StreamResult } from '@/lib/providers/types';
@@ -46,6 +49,11 @@ import {
   Shadows,
 } from '@/constants/theme';
 import { useProvidersStore } from '@/stores/providersStore';
+import { useWatchlistStore } from '@/stores/watchlistStore';
+import { usePlayerStore } from '@/stores/playerStore';
+import { useDownloadStore } from '@/stores/downloadStore';
+import { downloadManager } from '@/lib/downloadManager';
+import { supabase } from '@/lib/supabase';
 
 // Cinematic ratio calculated dynamically in component
 
@@ -78,16 +86,39 @@ export default function MediaDetailScreen() {
     enabled: mediaId > 0,
   });
 
+  // State for TV Shows
+  const [selectedSeason, setSelectedSeason] = useState(1);
+  const [selectedEpisode, setSelectedEpisode] = useState(1);
+
+  // Fetch season details if it's a TV show
+  const { data: seasonDetails, isLoading: seasonLoading } = useQuery({
+    queryKey: ['seasonDetails', mediaId, selectedSeason],
+    queryFn: () => getSeasonDetails(mediaId, selectedSeason),
+    enabled: mediaType === 'tv' && mediaId > 0 && selectedSeason > 0,
+  });
+
+  const { isInWatchlist, toggleWatchlist, loadWatchlist } = useWatchlistStore();
+  const { setActiveStreams, setActiveSubtitles } = usePlayerStore();
+  const isSaved = isInWatchlist(mediaId.toString());
+
+  React.useEffect(() => {
+    loadWatchlist();
+  }, []);
+
   const { isLoading: providersLoading } = useProvidersStore();
   const [liveStreams, setLiveStreams] = useState<StreamResult[]>([]);
   const [activeTab, setActiveTab] = useState<'streaming' | 'downloads'>('streaming');
 
   // Fetch streams from providers progressively
+  const streamQueryKey = mediaType === 'tv' 
+    ? queryKeys.streams(`${id}:s${selectedSeason}e${selectedEpisode}`, mediaType)
+    : queryKeys.streams(id || '', mediaType);
+
   const { data: cachedData, isLoading: streamsLoading } = useQuery({
-    queryKey: queryKeys.streams(id || '', mediaType),
+    queryKey: streamQueryKey,
     queryFn: async () => {
       // Reset only if we don't have cached data yet
-      setLiveStreams(prev => prev.length > 0 ? prev : []);
+      setLiveStreams(prev => prev.length > 0 ? [] : []);
       
       const qualityOrder: Record<string, number> = {
         '4K': 4,
@@ -101,8 +132,8 @@ export default function MediaDetailScreen() {
       const result = await providerManager.searchStreams(
         id || '', 
         mediaType,
-        undefined,
-        undefined,
+        mediaType === 'tv' ? selectedSeason : undefined,
+        mediaType === 'tv' ? selectedEpisode : undefined,
         (newStreams) => {
           setLiveStreams(prev => {
             // Deduplicate logic just in case an addon duplicates streams
@@ -112,8 +143,15 @@ export default function MediaDetailScreen() {
             if (distinctNew.length === 0) return prev;
             
             const merged = [...prev, ...distinctNew];
-            // Sort highest quality first
-            merged.sort((a, b) => (qualityOrder[b.quality] || 0) - (qualityOrder[a.quality] || 0));
+            // Sort: highest quality first, then direct playable, then Latino preference
+            const langOrder = (l: string) => l === 'es-lat' ? 0 : l === 'es-es' ? 1 : l === 'en-sub' ? 2 : 3;
+            merged.sort((a, b) => {
+              const qualDiff = (qualityOrder[b.quality] || 0) - (qualityOrder[a.quality] || 0);
+              if (qualDiff !== 0) return qualDiff;
+              if (a.type === 'direct' && b.type !== 'direct') return -1;
+              if (b.type === 'direct' && a.type !== 'direct') return 1;
+              return langOrder(a.language) - langOrder(b.language);
+            });
             return merged;
           });
         }
@@ -122,7 +160,7 @@ export default function MediaDetailScreen() {
       return result;
     },
     enabled: !!id && !providersLoading,
-    staleTime: 1000 * 60 * 15, // Cache the streams for 15 minutes to prevent re-scraping instantly
+    staleTime: 1000 * 60 * 30, // Cache streams for 30 minutes — tokens typically last 1-4 hrs so this is safe
   });
 
   // Hydrate liveStreams with cached data instantly when returning to the page
@@ -142,6 +180,7 @@ export default function MediaDetailScreen() {
 
   const rating = getRatingStars(details.vote_average);
   const year = getReleaseYear(details);
+  const trailer = details.videos?.results?.find((v: any) => v.site === 'YouTube' && v.type === 'Trailer');
   const runtime = details.runtime
     ? `${Math.floor(details.runtime / 60)}h ${details.runtime % 60}min`
     : details.number_of_seasons
@@ -225,17 +264,31 @@ export default function MediaDetailScreen() {
         {/* Overview */}
         <Text style={styles.overview}>{details.overview}</Text>
 
+        {trailer && (
+          <Button
+            title="Ver Tráiler"
+            onPress={() => Linking.openURL(`https://www.youtube.com/watch?v=${trailer.key}`)}
+            variant="secondary"
+            icon={<Ionicons name="logo-youtube" size={20} color={Colors.textPrimary} />}
+            style={{ marginBottom: Spacing.md }}
+          />
+        )}
+
         {/* Action Buttons */}
         <View style={styles.actionRow}>
           <Button
             title="Ver Ahora"
             onPress={() => {
-              if (liveStreams?.[0]) {
+              if (streamingLinks?.[0]) {
+                setActiveStreams(streamingLinks);
+                setActiveSubtitles(cachedData?.subtitles || []);
                 router.push({
                   pathname: '/player',
                   params: {
-                    url: liveStreams[0].url,
-                    title: getTitle(details),
+                    url: streamingLinks[0].url,
+                    title: mediaType === 'tv' 
+                      ? `${getTitle(details)} - S${selectedSeason}E${selectedEpisode}` 
+                      : getTitle(details),
                     tmdbId: details.id.toString(),
                     mediaType: mediaType,
                   },
@@ -247,8 +300,11 @@ export default function MediaDetailScreen() {
             icon={<Ionicons name="play" size={20} color={Colors.textPrimary} />}
             style={{ flex: 1 }}
           />
-          <HapticPressable style={styles.iconButton}>
-            <Ionicons name="bookmark-outline" size={24} color={Colors.textPrimary} />
+          <HapticPressable 
+            style={[styles.iconButton, isSaved && { borderColor: Colors.primary, backgroundColor: 'rgba(229,9,20,0.1)' }]}
+            onPress={() => toggleWatchlist(mediaId.toString(), mediaType)}
+          >
+            <Ionicons name={isSaved ? "bookmark" : "bookmark-outline"} size={24} color={isSaved ? Colors.primary : Colors.textPrimary} />
           </HapticPressable>
           <HapticPressable 
             style={styles.iconButton}
@@ -275,7 +331,11 @@ export default function MediaDetailScreen() {
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={styles.castRow}>
               {details.credits.cast.slice(0, 10).map((person) => (
-                <View key={person.id} style={styles.castItem}>
+                <HapticPressable 
+                  key={person.id} 
+                  style={styles.castItem}
+                  onPress={() => router.push({ pathname: '/person/[id]', params: { id: person.id.toString() } })}
+                >
                   <Image
                     source={{ uri: getImageUrl(person.profile_path, 'w185') }}
                     style={styles.castImage}
@@ -288,16 +348,83 @@ export default function MediaDetailScreen() {
                   <Text style={styles.castCharacter} numberOfLines={1}>
                     {person.character}
                   </Text>
-                </View>
+                </HapticPressable>
               ))}
             </View>
           </ScrollView>
         </View>
       )}
 
+      {/* TV Show Seasons & Episodes */}
+      {mediaType === 'tv' && details.number_of_seasons && details.number_of_seasons > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Temporadas</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: Spacing.lg }}>
+            <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
+              {Array.from({ length: details.number_of_seasons }).map((_, i) => (
+                <Pressable
+                  key={`season-${i + 1}`}
+                  style={[
+                    styles.seasonTab,
+                    selectedSeason === i + 1 && styles.seasonTabActive
+                  ]}
+                  onPress={() => {
+                    setSelectedSeason(i + 1);
+                    setSelectedEpisode(1);
+                  }}
+                >
+                  <Text style={[
+                    styles.seasonTabText,
+                    selectedSeason === i + 1 && styles.seasonTabTextActive
+                  ]}>
+                    Temporada {i + 1}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </ScrollView>
+
+          {seasonLoading ? (
+            <ActivityIndicator color={Colors.primary} style={{ marginVertical: Spacing.lg }} />
+          ) : seasonDetails && seasonDetails.episodes && seasonDetails.episodes.length > 0 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={{ flexDirection: 'row', gap: Spacing.md }}>
+                {seasonDetails.episodes.map((ep) => (
+                  <HapticPressable
+                    key={ep.id}
+                    style={[
+                      styles.episodeCard,
+                      selectedEpisode === ep.episode_number && styles.episodeCardActive
+                    ]}
+                    onPress={() => setSelectedEpisode(ep.episode_number)}
+                  >
+                    <Image
+                      source={{ uri: getImageUrl(ep.still_path, 'w342') }}
+                      style={styles.episodeImage}
+                      contentFit="cover"
+                      transition={200}
+                    />
+                    <View style={styles.episodeInfo}>
+                      <Text style={styles.episodeNumber}>E{ep.episode_number}</Text>
+                      <Text style={styles.episodeTitle} numberOfLines={1}>{ep.name}</Text>
+                    </View>
+                  </HapticPressable>
+                ))}
+              </View>
+            </ScrollView>
+          ) : (
+            <Text style={{ color: Colors.textTertiary, paddingHorizontal: Spacing.md }}>
+              No hay episodios disponibles
+            </Text>
+          )}
+        </View>
+      )}
+
       {/* Streams / Sources */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Fuentes Disponibles</Text>
+        <Text style={styles.sectionTitle}>
+          Fuentes {mediaType === 'tv' ? `(T${selectedSeason} E${selectedEpisode})` : 'Disponibles'}
+        </Text>
         
         {liveStreams.length === 0 && streamsLoading ? (
           <ActivityIndicator color={Colors.primary} style={{ marginVertical: Spacing.lg }} />
@@ -323,10 +450,42 @@ export default function MediaDetailScreen() {
               </HapticPressable>
             </View>
 
-            {currentStreams.map((stream, index) => (
+            {currentStreams.map((stream, index) => {
+              const handleDownload = () => {
+                const titleStr = mediaType === 'tv' 
+                  ? `${getTitle(details)} - S${selectedSeason}E${selectedEpisode}` 
+                  : getTitle(details);
+                
+                // Create a unique ID for this download (mediaId + season/ep + provider + quality)
+                const downloadId = `${details.id}_${mediaType}_${selectedSeason || 0}_${selectedEpisode || 0}_${stream.provider}_${stream.quality}`.replace(/[^a-zA-Z0-9]/g, '_');
+                
+                // Add to store
+                useDownloadStore.getState().addDownload({
+                  id: downloadId,
+                  mediaId: details.id.toString(),
+                  type: mediaType,
+                  title: titleStr,
+                  posterPath: details.poster_path,
+                  serverName: stream.provider,
+                  url: stream.url,
+                });
+                
+                // Start download
+                downloadManager.startDownload(downloadId);
+                
+                if (Platform.OS === 'web') {
+                  // Fallback for web is handled inside downloadManager
+                } else {
+                  // Show feedback maybe
+                  alert('Descarga iniciada. Revisa la sección de descargas.');
+                }
+              };
+
+              return (
               <StreamItem
                 key={index}
                 stream={stream}
+                onDownload={handleDownload}
                 onPress={() => {
                   if (stream.isDownload) {
                     Platform.OS === 'web' ? window.open(stream.url, '_blank') : Linking.openURL(stream.url);
@@ -334,11 +493,21 @@ export default function MediaDetailScreen() {
                     // Indirect embed link (e.g. Voe) -> Open external browser/tab
                     Platform.OS === 'web' ? window.open(stream.url, '_blank') : Linking.openURL(stream.url);
                   } else {
+                    // Put the selected stream first, then the rest
+                    const reorderedStreams = [
+                      stream,
+                      ...streamingLinks.filter(s => s.url !== stream.url)
+                    ];
+                    setActiveStreams(reorderedStreams);
+                    setActiveSubtitles(cachedData?.subtitles || []);
+                    
                     router.push({
                       pathname: '/player',
                       params: { 
                         url: stream.url, 
-                        title: getTitle(details),
+                        title: mediaType === 'tv' 
+                          ? `${getTitle(details)} - S${selectedSeason}E${selectedEpisode}` 
+                          : getTitle(details),
                         tmdbId: details.id.toString(),
                         mediaType: mediaType,
                       },
@@ -346,7 +515,7 @@ export default function MediaDetailScreen() {
                   }
                 }}
               />
-            ))}
+            )})}
 
             {currentStreams.length === 0 && !streamsLoading && (
               <View style={styles.emptyTab}>
@@ -368,6 +537,46 @@ export default function MediaDetailScreen() {
                 <Text style={{ color: Colors.textTertiary, fontSize: 12 }}>Buscando más fuentes...</Text>
               </View>
             )}
+            
+            {/* VIP Cache Request Button */}
+            {!streamsLoading && (
+              <HapticPressable 
+                onPress={async () => {
+                  try {
+                    const { error } = await supabase.from('vip_requests').insert({
+                      tmdb_id: details.id.toString(),
+                      media_type: mediaType,
+                      title: getTitle(details),
+                      provider: 'auto',
+                      source_url: 'search',
+                      status: 'pending'
+                    });
+                    
+                    if (error) throw error;
+                    alert('¡Petición VIP enviada! La Seedbox buscará y descargará esta película en alta calidad en breve.');
+                  } catch (e: any) {
+                    alert('Error enviando petición VIP: ' + e.message);
+                  }
+                }}
+                style={{
+                  backgroundColor: '#ff434315',
+                  padding: Spacing.md,
+                  borderRadius: 12,
+                  marginTop: Spacing.xl,
+                  borderWidth: 1,
+                  borderColor: '#ff434350',
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: Spacing.sm
+                }}
+              >
+                <Ionicons name="server" size={20} color="#ff4343" />
+                <Text style={{ color: '#ff4343', fontWeight: 'bold' }}>
+                  ¿Lento o sin links? Solicitar Caché VIP en Seedbox
+                </Text>
+              </HapticPressable>
+            )}
           </View>
         ) : (
           <View style={styles.noStreams}>
@@ -375,9 +584,57 @@ export default function MediaDetailScreen() {
             <Text style={styles.noStreamsText}>
               No hay fuentes disponibles. Agrega un proveedor en Perfil → Proveedores.
             </Text>
+            
+            {/* VIP Cache Request Button (When no streams at all) */}
+            <HapticPressable 
+                onPress={async () => {
+                  try {
+                    const { error } = await supabase.from('vip_requests').insert({
+                      tmdb_id: details.id.toString(),
+                      media_type: mediaType,
+                      title: getTitle(details),
+                      provider: 'auto',
+                      source_url: 'search',
+                      status: 'pending'
+                    });
+                    
+                    if (error) throw error;
+                    alert('¡Petición VIP enviada! La Seedbox buscará y descargará esta película en alta calidad en breve.');
+                  } catch (e: any) {
+                    alert('Error enviando petición VIP: ' + e.message);
+                  }
+                }}
+                style={{
+                  backgroundColor: '#ff434315',
+                  padding: Spacing.md,
+                  borderRadius: 12,
+                  marginTop: Spacing.xl,
+                  borderWidth: 1,
+                  borderColor: '#ff434350',
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: Spacing.sm
+                }}
+              >
+                <Ionicons name="server" size={20} color="#ff4343" />
+                <Text style={{ color: '#ff4343', fontWeight: 'bold', textAlign: 'center' }}>
+                  Solicitar búsqueda y descarga VIP
+                </Text>
+            </HapticPressable>
           </View>
         )}
       </View>
+
+      {/* Similar Content */}
+      {details.similar?.results && details.similar.results.length > 0 && (
+        <View style={{ marginTop: Spacing.xl }}>
+          <MediaRow
+            title="Similares a este título"
+            data={details.similar.results}
+          />
+        </View>
+      )}
     </ScrollView>
 
     {/* Floating Back Button */}
@@ -395,7 +652,7 @@ export default function MediaDetailScreen() {
 }
 
 /** Individual stream source item */
-function StreamItem({ stream, onPress }: { stream: StreamResult; onPress: () => void }) {
+function StreamItem({ stream, onPress, onDownload }: { stream: StreamResult; onPress: () => void; onDownload?: () => void }) {
   const qualityColor: Record<string, string> = {
     '4K': '#FFD700',
     '1080p': '#4FC3F7',
@@ -404,26 +661,39 @@ function StreamItem({ stream, onPress }: { stream: StreamResult; onPress: () => 
     Unknown: Colors.textTertiary,
   };
 
+  const isIndirect = stream.behaviorHints && !stream.behaviorHints.isDirect;
+  const canDownload = !isIndirect && !stream.isDownload && onDownload;
+
   return (
-    <HapticPressable onPress={onPress} style={styles.streamItem}>
-      <View style={styles.streamIcon}>
-        <Ionicons
-          name={stream.isDownload ? 'download-outline' : (stream.type === 'torrent' ? 'magnet-outline' : 'play-circle-outline')}
-          size={24}
-          color={Colors.primary}
+    <View style={[styles.streamItem, isIndirect && { opacity: 0.75 }]}>
+      <HapticPressable onPress={onPress} style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
+        <View style={[styles.streamIcon, isIndirect && { backgroundColor: Colors.surfaceLight }]}>
+          <Ionicons
+            name={isIndirect ? 'open-outline' : stream.isDownload ? 'download-outline' : (stream.type === 'torrent' ? 'magnet-outline' : 'play-circle-outline')}
+            size={24}
+            color={isIndirect ? Colors.textTertiary : Colors.primary}
+          />
+        </View>
+        <View style={[styles.streamInfo, { flex: 1 }]}>
+          <Text style={[styles.streamTitle, isIndirect && { color: Colors.textSecondary }]}>
+            {stream.title} {isIndirect && '(Externo)'}
+          </Text>
+          <Text style={styles.streamMeta}>
+            {stream.provider} {stream.size ? `· ${stream.size}` : ''}
+          </Text>
+        </View>
+        <Badge
+          text={stream.quality}
+          color={isIndirect ? Colors.textTertiary : qualityColor[stream.quality]}
         />
-      </View>
-      <View style={styles.streamInfo}>
-        <Text style={styles.streamTitle}>{stream.title}</Text>
-        <Text style={styles.streamMeta}>
-          {stream.provider} {stream.size ? `· ${stream.size}` : ''}
-        </Text>
-      </View>
-      <Badge
-        text={stream.quality}
-        color={qualityColor[stream.quality]}
-      />
-    </HapticPressable>
+      </HapticPressable>
+      
+      {canDownload && (
+        <HapticPressable onPress={onDownload} style={{ padding: Spacing.sm, marginLeft: Spacing.sm }}>
+          <Ionicons name="cloud-download-outline" size={24} color={Colors.primary} />
+        </HapticPressable>
+      )}
+    </View>
   );
 }
 
@@ -629,5 +899,54 @@ const styles = StyleSheet.create({
     ...Typography.bodySmall,
     color: Colors.textTertiary,
     textAlign: 'center',
+  },
+  seasonTab: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.pill,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  seasonTabActive: {
+    backgroundColor: 'rgba(229, 9, 20, 0.1)',
+    borderColor: Colors.primary,
+  },
+  seasonTabText: {
+    ...Typography.bodySmall,
+    color: Colors.textSecondary,
+  },
+  seasonTabTextActive: {
+    color: Colors.textPrimary,
+    fontWeight: 'bold',
+  },
+  episodeCard: {
+    width: 160,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surface,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  episodeCardActive: {
+    borderColor: Colors.primary,
+  },
+  episodeImage: {
+    width: '100%',
+    height: 90,
+    backgroundColor: Colors.surfaceLight,
+  },
+  episodeInfo: {
+    padding: Spacing.sm,
+  },
+  episodeNumber: {
+    ...Typography.caption,
+    color: Colors.primary,
+    fontWeight: 'bold',
+    marginBottom: 2,
+  },
+  episodeTitle: {
+    ...Typography.bodySmall,
+    color: Colors.textPrimary,
   },
 });

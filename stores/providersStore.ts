@@ -94,6 +94,16 @@ export const useProvidersStore = create<ProvidersState>((set, get) => ({
         });
       }
 
+      // La.Movie
+      if (!parsed.some(p => p.id === 'com.burreromedia.lamovie')) {
+        parsed.push({
+           url: `${origin}/api/lamovie/manifest.json`,
+           id: 'com.burreromedia.lamovie',
+           name: 'La.Movie (Integrado)',
+           version: '1.0.0',
+        });
+      }
+
       await safeStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
 
       set({ installedProviders: parsed });

@@ -27,7 +27,12 @@
     "web": {
       "bundler": "metro",
       "output": "server",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "name": "BurreroMedia",
+      "shortName": "BurreroMedia",
+      "themeColor": "#0a0a0f",
+      "backgroundColor": "#0a0a0f",
+      "display": "standalone"
     },
     "plugins": [
       "expo-router"

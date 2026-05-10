@@ -4,7 +4,7 @@
  * Displays recommendations, ratings, and watchlist activity
  * from friends in a chronological feed.
  */
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -90,6 +90,7 @@ export default function SocialScreen() {
 }
 
 function FeedCard({ item, onPress }: { item: FeedItem; onPress: () => void }) {
+  const [isLiked, setIsLiked] = useState(false);
   const { data: mediaDetails, isLoading } = useQuery({
     queryKey: ['mediaDetails', item.tmdb_id, item.media_type],
     queryFn: () => getDetails(parseInt(item.tmdb_id), item.media_type),
@@ -134,6 +135,31 @@ function FeedCard({ item, onPress }: { item: FeedItem; onPress: () => void }) {
           </View>
         </View>
       )}
+
+      {/* Interaction Bar */}
+      <View style={styles.interactionBar}>
+        <HapticPressable 
+          style={styles.interactionBtn}
+          onPress={(e) => {
+            e.stopPropagation();
+            setIsLiked(!isLiked);
+          }}
+        >
+          <Ionicons name={isLiked ? "heart" : "heart-outline"} size={22} color={isLiked ? Colors.primary : Colors.textSecondary} />
+          <Text style={[styles.interactionText, isLiked && { color: Colors.primary }]}>
+            {isLiked ? '1' : '0'}
+          </Text>
+        </HapticPressable>
+
+        <HapticPressable style={styles.interactionBtn} onPress={(e) => e.stopPropagation()}>
+          <Ionicons name="chatbubble-outline" size={20} color={Colors.textSecondary} />
+          <Text style={styles.interactionText}>Comentar</Text>
+        </HapticPressable>
+
+        <HapticPressable style={styles.interactionBtn} onPress={(e) => e.stopPropagation()}>
+          <Ionicons name="share-social-outline" size={20} color={Colors.textSecondary} />
+        </HapticPressable>
+      </View>
     </HapticPressable>
   );
 }
@@ -264,6 +290,25 @@ const styles = StyleSheet.create({
   },
   mediaYear: {
     ...Typography.caption,
+    color: Colors.textSecondary,
+  },
+  interactionBar: {
+    flexDirection: 'row',
+    padding: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    justifyContent: 'flex-start',
+    gap: Spacing.xl,
+  },
+  interactionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingVertical: Spacing.xs,
+  },
+  interactionText: {
+    ...Typography.bodySmall,
     color: Colors.textSecondary,
   },
 });

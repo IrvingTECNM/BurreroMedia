@@ -64,6 +64,43 @@ export interface TMDBVideo {
   type: string;
 }
 
+export interface TMDBEpisode {
+  id: number;
+  name: string;
+  overview: string;
+  vote_average: number;
+  vote_count: number;
+  air_date: string;
+  episode_number: number;
+  episode_type: string;
+  runtime: number;
+  season_number: number;
+  still_path: string | null;
+}
+
+export interface TMDBSeason {
+  _id: string;
+  air_date: string;
+  episodes: TMDBEpisode[];
+  name: string;
+  overview: string;
+  id: number;
+  poster_path: string | null;
+  season_number: number;
+  vote_average: number;
+}
+
+export interface TMDBPerson {
+  id: number;
+  name: string;
+  biography: string;
+  profile_path: string | null;
+  known_for_department: string;
+  place_of_birth: string | null;
+  birthday: string | null;
+  deathday: string | null;
+}
+
 export type ImageSize = 'w92' | 'w154' | 'w185' | 'w342' | 'w500' | 'w780' | 'original';
 export type BackdropSize = 'w300' | 'w780' | 'w1280' | 'original';
 
@@ -131,6 +168,21 @@ export async function getDetails(id: number, mediaType: MediaType): Promise<TMDB
     `/${mediaType}/${id}`,
     { append_to_response: 'credits,videos,similar' }
   );
+  return data;
+}
+
+export async function getSeasonDetails(tvId: number, seasonNumber: number): Promise<TMDBSeason> {
+  const data = await fetchTMDB<TMDBSeason>(`/tv/${tvId}/season/${seasonNumber}`);
+  return data;
+}
+
+export async function getPersonDetails(personId: number): Promise<TMDBPerson> {
+  const data = await fetchTMDB<TMDBPerson>(`/person/${personId}`);
+  return data;
+}
+
+export async function getPersonCredits(personId: number): Promise<{ cast: TMDBMovie[] }> {
+  const data = await fetchTMDB<{ cast: TMDBMovie[] }>(`/person/${personId}/combined_credits`);
   return data;
 }
 

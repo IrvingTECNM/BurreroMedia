@@ -14,6 +14,7 @@ import {
   ActivityIndicator,
   Platform,
   Animated,
+  ScrollView,
 } from 'react-native';
 import { Video, ResizeMode, AVPlaybackStatus, Audio } from 'expo-av';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -34,17 +35,56 @@ export default function PlayerScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const videoRef = useRef<Video>(null);
-  const { updateProgress } = usePlayerStore();
+  const { updateProgress, activeStreams, activeSubtitles } = usePlayerStore();
 
+  const [currentStreamIndex, setCurrentStreamIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [showControls, setShowControls] = useState(true);
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const [showSubtitlesMenu, setShowSubtitlesMenu] = useState(false);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [selectedSubtitle, setSelectedSubtitle] = useState<string | null>(null);
   const [subtitlesEnabled, setSubtitlesEnabled] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isProgressBarHovered, setIsProgressBarHovered] = useState(false);
   const [progressBarWidth, setProgressBarWidth] = useState(0);
+  const [errorCount, setErrorCount] = useState(0);
+
+  // The actual URL being played
+  const currentUrl = activeStreams.length > 0 
+    ? activeStreams[currentStreamIndex]?.url 
+    : url;
+
+  // Inject Web Subtitles
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      const videoElements = document.getElementsByTagName('video');
+      if (videoElements.length > 0) {
+        const videoElement = videoElements[0];
+        // Remove old tracks
+        const oldTracks = videoElement.querySelectorAll('track');
+        oldTracks.forEach(t => t.remove());
+
+        if (subtitlesEnabled && selectedSubtitle) {
+          const track = document.createElement('track');
+          track.src = selectedSubtitle;
+          track.kind = 'subtitles';
+          track.srclang = 'es';
+          track.label = 'Subtitles';
+          track.default = true;
+          
+          // Disable native subtitle styling if possible to let CSS handle it
+          videoElement.appendChild(track);
+          // Force textTracks to show
+          if (videoElement.textTracks && videoElement.textTracks.length > 0) {
+            videoElement.textTracks[0].mode = 'showing';
+          }
+        }
+      }
+    }
+  }, [selectedSubtitle, subtitlesEnabled, currentUrl]);
 
   useEffect(() => {
     Audio.setAudioModeAsync({
@@ -132,6 +172,17 @@ export default function PlayerScreen() {
     }
   };
 
+  const handleError = (error: string) => {
+    console.log('[Player] Error playing stream:', error);
+    if (activeStreams.length > 0 && currentStreamIndex < activeStreams.length - 1) {
+      console.log('[Player] Falling back to next stream...');
+      setCurrentStreamIndex(prev => prev + 1);
+      setErrorCount(0); // Reset error count for the new stream
+    } else {
+      console.log('[Player] No more fallback streams available.');
+    }
+  };
+
   const togglePlay = async () => {
     if (!videoRef.current) return;
     const status = await videoRef.current.getStatusAsync();
@@ -198,7 +249,12 @@ export default function PlayerScreen() {
           togglePlay();
         } else {
           setShowControls(!showControls);
-          if (!showControls) resetHideControlsTimer();
+          if (showControls) {
+            setShowSettingsMenu(false);
+            setShowSubtitlesMenu(false);
+          } else {
+            resetHideControlsTimer();
+          }
         }
       }
     }
@@ -244,18 +300,27 @@ export default function PlayerScreen() {
                 top: 0 !important;
                 left: 0 !important;
               }
+              ::cue {
+                background-color: rgba(0, 0, 0, 0.8);
+                color: white;
+                font-family: sans-serif;
+                font-size: 1.5rem;
+                line-height: 1.5;
+                padding: 0.2em 0.5em;
+              }
             </style>
           `}} />
         )}
         <Video
           ref={videoRef}
-          source={{ uri: url || '' }}
+          source={{ uri: currentUrl || '' }}
           style={[styles.video, { width: '100%', height: '100%' }]}
           resizeMode={ResizeMode.CONTAIN}
           shouldPlay
           isMuted={isMuted}
           volume={1.0}
           onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
+          onError={(e) => handleError(e)}
           useNativeControls={false}
         />
 
@@ -263,6 +328,11 @@ export default function PlayerScreen() {
         {isLoading && (
           <View style={styles.loadingOverlay}>
             <ActivityIndicator size="large" color={Colors.primary} />
+            {currentStreamIndex > 0 && (
+              <Text style={{ color: 'white', marginTop: Spacing.md }}>
+                Cargando servidor alternativo...
+              </Text>
+            )}
           </View>
         )}
 
@@ -307,6 +377,69 @@ export default function PlayerScreen() {
               </HapticPressable>
             </View>
           </LinearGradient>
+
+          {/* Menus */}
+          {showSettingsMenu && (
+            <View style={styles.menuContainer}>
+              <Text style={styles.menuTitle}>Servidores Disponibles</Text>
+              <ScrollView style={styles.menuList}>
+                {activeStreams.map((stream, index) => (
+                  <Pressable 
+                    key={`${stream.provider}-${index}`} 
+                    style={[styles.menuItem, currentStreamIndex === index && styles.menuItemActive]}
+                    onPress={() => {
+                      setCurrentStreamIndex(index);
+                      setShowSettingsMenu(false);
+                      setIsLoading(true);
+                    }}
+                  >
+                    <Ionicons name={currentStreamIndex === index ? "radio-button-on" : "radio-button-off"} size={20} color={currentStreamIndex === index ? Colors.primary : Colors.textPrimary} />
+                    <View style={{ marginLeft: Spacing.sm }}>
+                      <Text style={styles.menuItemText}>{stream.provider} - {stream.quality}</Text>
+                      <Text style={styles.menuItemSubtext}>{stream.language}</Text>
+                    </View>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+
+          {showSubtitlesMenu && (
+            <View style={styles.menuContainer}>
+              <Text style={styles.menuTitle}>Subtítulos</Text>
+              <ScrollView style={styles.menuList}>
+                <Pressable 
+                  style={[styles.menuItem, !subtitlesEnabled && styles.menuItemActive]}
+                  onPress={() => {
+                    setSubtitlesEnabled(false);
+                    setSelectedSubtitle(null);
+                    setShowSubtitlesMenu(false);
+                  }}
+                >
+                  <Ionicons name={!subtitlesEnabled ? "radio-button-on" : "radio-button-off"} size={20} color={!subtitlesEnabled ? Colors.primary : Colors.textPrimary} />
+                  <Text style={[styles.menuItemText, { marginLeft: Spacing.sm }]}>Desactivados</Text>
+                </Pressable>
+                
+                {activeSubtitles.map((sub, index) => (
+                  <Pressable 
+                    key={`sub-${index}`} 
+                    style={[styles.menuItem, subtitlesEnabled && selectedSubtitle === sub.url && styles.menuItemActive]}
+                    onPress={() => {
+                      setSubtitlesEnabled(true);
+                      setSelectedSubtitle(sub.url);
+                      setShowSubtitlesMenu(false);
+                    }}
+                  >
+                    <Ionicons name={subtitlesEnabled && selectedSubtitle === sub.url ? "radio-button-on" : "radio-button-off"} size={20} color={subtitlesEnabled && selectedSubtitle === sub.url ? Colors.primary : Colors.textPrimary} />
+                    <Text style={[styles.menuItemText, { marginLeft: Spacing.sm }]}>{sub.label || sub.language}</Text>
+                  </Pressable>
+                ))}
+                {activeSubtitles.length === 0 && (
+                  <Text style={styles.menuItemSubtext}>No hay subtítulos disponibles</Text>
+                )}
+              </ScrollView>
+            </View>
+          )}
 
           {/* Bottom Gradient & Bar */}
           <LinearGradient
@@ -363,16 +496,34 @@ export default function PlayerScreen() {
               </View>
 
               <View style={styles.bottomRightControls}>
-                <HapticPressable onPress={() => setSubtitlesEnabled(!subtitlesEnabled)} style={styles.iconBtn}>
+                <HapticPressable 
+                  onPress={() => {
+                    setShowSubtitlesMenu(!showSubtitlesMenu);
+                    setShowSettingsMenu(false);
+                    resetHideControlsTimer();
+                  }} 
+                  style={styles.iconBtn}
+                >
                   <Ionicons 
                     name={subtitlesEnabled ? "chatbox-ellipses" : "chatbox-ellipses-outline"} 
                     size={24} 
-                    color={Colors.textPrimary} 
+                    color={subtitlesEnabled ? Colors.primary : Colors.textPrimary} 
                   />
                 </HapticPressable>
 
-                <HapticPressable style={styles.iconBtn}>
-                  <Ionicons name="settings-outline" size={24} color={Colors.textPrimary} />
+                <HapticPressable 
+                  onPress={() => {
+                    setShowSettingsMenu(!showSettingsMenu);
+                    setShowSubtitlesMenu(false);
+                    resetHideControlsTimer();
+                  }} 
+                  style={styles.iconBtn}
+                >
+                  <Ionicons 
+                    name={showSettingsMenu ? "settings" : "settings-outline"} 
+                    size={24} 
+                    color={showSettingsMenu ? Colors.primary : Colors.textPrimary} 
+                  />
                 </HapticPressable>
 
                 <HapticPressable onPress={toggleFullscreen} style={styles.iconBtn}>
@@ -530,5 +681,46 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     top: '50%',
     marginTop: -7,
+  },
+  menuContainer: {
+    position: 'absolute',
+    bottom: 90,
+    right: Spacing.xl,
+    backgroundColor: 'rgba(20, 20, 20, 0.95)',
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    width: 250,
+    maxHeight: 300,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  menuTitle: {
+    ...Typography.body,
+    fontWeight: 'bold',
+    color: Colors.textPrimary,
+    marginBottom: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+    paddingBottom: Spacing.sm,
+  },
+  menuList: {
+    flexGrow: 0,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.md,
+  },
+  menuItemActive: {
+    backgroundColor: 'rgba(229, 9, 20, 0.15)',
+  },
+  menuItemText: {
+    ...Typography.bodySmall,
+    color: Colors.textPrimary,
+  },
+  menuItemSubtext: {
+    ...Typography.caption,
+    color: Colors.textTertiary,
   },
 });

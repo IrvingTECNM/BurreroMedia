@@ -92,6 +92,15 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="downloads"
+        options={{
+          title: 'Descargas',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="cloud-download" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="social"
         options={{
           title: 'Social',

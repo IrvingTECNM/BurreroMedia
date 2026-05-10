@@ -127,7 +127,6 @@ export default function ProfileScreen() {
       <View style={styles.settingsSection}>
         <Text style={styles.sectionTitle}>Configuración</Text>
         <View style={styles.settingsCard}>
-          <SettingItem icon="person-outline" label="Editar Perfil" onPress={() => router.push('/edit-profile')} />
           <SettingItem 
             icon="extension-puzzle-outline" 
             label="Proveedores" 
@@ -143,10 +142,6 @@ export default function ProfileScreen() {
         <Text style={styles.sectionTitle}>Cuenta</Text>
         <View style={styles.settingsCard}>
           <SettingItem icon="information-circle-outline" label="Acerca de" value="v1.0.0" />
-          <SettingItem icon="log-out-outline" label="Cerrar sesión" danger onPress={() => {
-            logout();
-            router.replace('/(auth)/login');
-          }} />
         </View>
       </View>
     </ScrollView>

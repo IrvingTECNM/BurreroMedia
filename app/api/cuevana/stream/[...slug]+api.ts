@@ -1,6 +1,8 @@
 import * as cheerio from 'cheerio';
 import { execSync } from 'child_process';
 import { extractFilemoon as extractFilemoonNew } from '../../../../lib/extractors/filemoon';
+import { extractStreamtape } from '../../../../lib/extractors/streamtape';
+import { extractStreamSB } from '../../../../lib/extractors/streamsb';
 
 const TMDB_API_KEY = 'ded2a315221e6d1d975e15f43377321d';
 const TMDB_BASE = 'https://api.themoviedb.org/3';
@@ -42,7 +44,7 @@ function extractDoodstream(embedUrl: string): string | null {
   const videoId = videoIdMatch[1];
 
   // Try doodstream.com first (what Cuevana uses), then mirrors
-  const mirrors = ['doodstream.com', 'dood.li', 'dood.wf', 'd0000d.com', 'dood.re', 'dood.pm'];
+  const mirrors = ['doodstream.com', 'dofast.to', 'dood.li', 'dood.wf', 'd0000d.com', 'dood.re', 'dood.pm', 'dood.so', 'dood.to', 'dood.yt', 'doods.pro'];
   
   for (const mirror of mirrors) {
     const url = `https://${mirror}/e/${videoId}`;
@@ -153,14 +155,16 @@ function getLangLabel(optId: string): string {
  * Get server name from known domains
  */
 function getServerName(url: string): string {
-  if (url.includes('doodstream')) return 'Doodstream';
+  if (url.includes('doodstream') || url.includes('dofast')) return 'Doodstream';
   if (url.includes('dood.')) return 'Doodstream';
   if (url.includes('voe.sx')) return 'Voe';
-  if (url.includes('streamtape')) return 'Streamtape';
+  if (url.includes('streamtape') || url.includes('strtape') || url.includes('stringtape') || url.includes('stape.')) return 'Streamtape';
   if (url.includes('filemoon')) return 'Filemoon';
   if (url.includes('streamwish')) return 'Streamwish';
   if (url.includes('vidhide')) return 'Vidhide';
   if (url.includes('waaw.to')) return 'Netu';
+  if (url.includes('sbfast') || url.includes('sbplay') || url.includes('sbembed') || url.includes('streamsb') || url.includes('sblongvu') || url.includes('sbbrisk') || url.includes('sbface') || url.includes('sbspeed')) return 'StreamSB';
+  if (url.includes('stlare') || url.includes('streamlare')) return 'StreamLare';
   return 'Desconocido';
 }
 
@@ -196,6 +200,81 @@ async function scrapeCuevanaNu(queryStr: string, serverOrigin: string, expectedY
     return await processServerPage(movieHtml, serverOrigin, movieUrl);
   } catch (error) {
     console.error('[Cuevana API] cuevana.nu error:', error);
+    return [];
+  }
+}
+
+/**
+ * Scrape cuevana.gs using its JSON search API.
+ * cuevana.gs is a modern SPA (React) with a separate REST API.
+ * Since its player endpoint is not directly accessible, we provide
+ * external links to the cuevana.gs player page for movies not found elsewhere.
+ * The main provider on cuevana.gs is vimeos/goodstream (packed extractor).
+ */
+async function scrapeCuevanaGS(queryStr: string, serverOrigin: string, expectedYear?: number | null): Promise<any[]> {
+  try {
+    const cleanQuery = queryStr.replace(/[&:!?()]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (cleanQuery.length < 3) return []; // cuevana.gs requires min 3 chars
+
+    const apiUrl = `https://cuevana.gs/wp-api/v1/search?q=${encodeURIComponent(cleanQuery)}&page=1&postType=movies&postsPerPage=10`;
+    console.log('[Cuevana API] Searching cuevana.gs API:', cleanQuery);
+
+    const jsonStr = curlFetch(apiUrl, { 'Accept': 'application/json' });
+    if (!jsonStr || !jsonStr.trim().startsWith('{')) return [];
+
+    const data = JSON.parse(jsonStr);
+    if (data.error) return [];
+
+    const posts = data?.data?.posts || [];
+    if (posts.length === 0) return [];
+
+    // Find best match by year validation
+    let bestMatch: any = null;
+    for (const post of posts) {
+      if (expectedYear) {
+        const releaseYear = post.release_date ? parseInt(post.release_date.substring(0, 4), 10) : null;
+        if (releaseYear && Math.abs(releaseYear - expectedYear) <= 1) {
+          bestMatch = post;
+          break;
+        }
+      } else {
+        bestMatch = post;
+        break;
+      }
+    }
+
+    if (!bestMatch) {
+      console.log('[Cuevana API] No year-validated match on cuevana.gs');
+      return [];
+    }
+
+    const slug = bestMatch.slug;
+    const title = bestMatch.title || bestMatch.original_title || 'Cuevana GS';
+    const moviePageUrl = `https://cuevana.gs/peliculas/${slug}/`;
+    console.log(`[Cuevana API] Found on cuevana.gs: "${title}" → ${moviePageUrl}`);
+
+    // Detect quality from the post data
+    const qualityIds = bestMatch.quality || [];
+    const qualityLabels: Record<number, string> = { 28: 'Full HD', 164: 'HD', 29: 'Dual 1080p', 35033: '4K' };
+    const qualityName = qualityIds.map((id: number) => qualityLabels[id] || '').filter(Boolean).join(', ') || 'HD';
+
+    // Detect language
+    const langLabel = title.toLowerCase().includes('dual') ? 'Latino/Subtitulado' : 'Latino';
+
+    // Since we can't directly extract the player iframe from cuevana.gs's SPA,
+    // we provide the movie page URL as an external link.
+    // The user can open it in their browser to watch directly on cuevana.gs.
+    const stream = {
+      name: 'Cuevana3 GS',
+      description: `🎬 Cuevana.gs (${langLabel} ${qualityName})`,
+      url: moviePageUrl,
+      behaviorHints: { notWebReady: true, isDirect: false },
+    };
+
+    console.log(`[Cuevana API] ✅ cuevana.gs: Added external link for "${title}"`);
+    return [stream];
+  } catch (error) {
+    console.error('[Cuevana API] cuevana.gs error:', error);
     return [];
   }
 }
@@ -282,8 +361,10 @@ async function processServerPage(html: string, serverOrigin: string, referer?: s
     }
 
     const isFilemoon = serverLower.includes('filemoon') || serverLower.includes('fmoon') || finalUrl.includes('filemoon.sx') || finalUrl.includes('byse');
-    const isDoodstream = serverLower.includes('doodstream') || serverLower.includes('dood.');
-    const provider = isFilemoon ? 'filemoon' : (isDoodstream ? 'doodstream' : undefined);
+    const isDoodstream = serverLower.includes('doodstream') || serverLower.includes('dood.') || finalUrl.includes('dofast');
+    const isStreamtape = serverLower.includes('streamtape') || serverLower.includes('stringtape') || serverLower.includes('stape') || finalUrl.includes('streamtape') || finalUrl.includes('strtape') || finalUrl.includes('stape.');
+    const isStreamSB = serverLower.includes('streamsb') || serverLower.includes('sbfast') || serverLower.includes('sbplay') || serverLower.includes('sbembed') || finalUrl.includes('sbfast') || finalUrl.includes('sbplay') || finalUrl.includes('sbembed') || finalUrl.includes('streamsb') || finalUrl.includes('sblongvu');
+    const provider = isFilemoon ? 'filemoon' : isDoodstream ? 'doodstream' : isStreamtape ? 'streamtape' : isStreamSB ? 'streamsb' : undefined;
 
     const stream: any = {
       name: 'Cuevana3',
@@ -312,6 +393,28 @@ async function processServerPage(html: string, serverOrigin: string, referer?: s
           const extracted = extractDoodstream(stream.url);
           if (extracted) {
             stream.url = proxyWrap(extracted, serverOrigin);
+            stream.description += ' ⚡';
+            stream.behaviorHints.isDirect = true;
+            stream.behaviorHints.notWebReady = false;
+          }
+        }).catch(() => {})
+      );
+    } else if (provider === 'streamtape') {
+      extractionPromises.push(
+        extractStreamtape(stream.url).then(stUrl => {
+          if (stUrl) {
+            stream.url = proxyWrap(stUrl, serverOrigin, stream.url);
+            stream.description += ' ⚡';
+            stream.behaviorHints.isDirect = true;
+            stream.behaviorHints.notWebReady = false;
+          }
+        }).catch(() => {})
+      );
+    } else if (provider === 'streamsb') {
+      extractionPromises.push(
+        extractStreamSB(stream.url).then(sbUrl => {
+          if (sbUrl) {
+            stream.url = proxyWrap(sbUrl, serverOrigin, stream.url);
             stream.description += ' ⚡';
             stream.behaviorHints.isDirect = true;
             stream.behaviorHints.notWebReady = false;
@@ -348,6 +451,7 @@ async function processServerPage(html: string, serverOrigin: string, referer?: s
  */
 async function scrapeCuevana(queryStr: string, serverOrigin: string, expectedYear?: number | null, altTitles?: string[]): Promise<any[]> {
   const mirrors = [
+    { type: 'gs', url: 'https://cuevana.gs' },           // Priority: newest movies, JSON API
     { type: 'classic', url: 'https://ww9.cuevana3.to' },
     { type: 'classic', url: 'https://www.cuevana3.to' },
     { type: 'api', url: 'https://cue.cuevana3.nu' }
@@ -356,23 +460,44 @@ async function scrapeCuevana(queryStr: string, serverOrigin: string, expectedYea
   // Build the full list of search terms to try: primary title first, then alternates
   const searchTerms = [queryStr, ...(altTitles || [])].filter(Boolean);
 
+  // Accumulate cuevana.gs external links while searching other mirrors
+  let gsExternalLinks: any[] = [];
+
   for (const mirror of mirrors) {
     // Try each title variant for this mirror
     for (const term of searchTerms) {
       try {
         console.log(`[Cuevana API] Mirror: ${mirror.url} | Query: "${term}"`);
 
+        if (mirror.type === 'gs') {
+          const gsResults = await scrapeCuevanaGS(term, serverOrigin, expectedYear);
+          if (gsResults.length > 0) {
+            console.log(`[Cuevana API] cuevana.gs found ${gsResults.length} external links`);
+            gsExternalLinks = gsResults;
+          }
+          // Always continue to other mirrors to find direct playable streams
+          continue;
+        }
+
         if (mirror.type === 'api') {
           const results = await scrapeCuevanaNu(term, serverOrigin, expectedYear);
           if (results.length > 0) {
-            results.sort((a, b) => {
+            // Merge direct streams with cuevana.gs external links
+            const merged = [...results, ...gsExternalLinks];
+            merged.sort((a, b) => {
+              // 1. Direct playable first
               if (a.behaviorHints.isDirect !== b.behaviorHints.isDirect) {
                 return b.behaviorHints.isDirect ? -1 : 1;
               }
+              // 2. Quality from description (look for 4K, 1080, 720, etc.)
+              const qualScore = (d: string) => d.includes('4K') ? 4 : d.includes('1080') ? 3 : d.includes('720') ? 2 : d.includes('480') ? 1 : 3;
+              const qDiff = qualScore(b.description) - qualScore(a.description);
+              if (qDiff !== 0) return qDiff;
+              // 3. Language preference: Latino > Subtitulado > Español
               const langOrder = (d: string) => d.includes('Latino') ? 0 : d.includes('Subtitulado') ? 1 : 2;
               return langOrder(a.description) - langOrder(b.description);
             });
-            return results;
+            return merged;
           }
           continue;
         }
@@ -396,7 +521,7 @@ async function scrapeCuevana(queryStr: string, serverOrigin: string, expectedYea
             // Try to find year from the result card (e.g. in a <span class="Year">) 
             const cardYear = parseInt($(this).find('.Year').text().trim(), 10);
             if (cardYear && Math.abs(cardYear - expectedYear) > 1) {
-              console.log(`[Cuevana API] Skipping result (year ${cardYear} ≠ ${expectedYear}): ${link}`);
+              console.log(`[Cuevana API] Skipping result (year ${cardYear} \u2260 ${expectedYear}): ${link}`);
               return; // skip this result
             }
           }
@@ -412,14 +537,22 @@ async function scrapeCuevana(queryStr: string, serverOrigin: string, expectedYea
 
         const results = await processServerPage(movieHtml, serverOrigin, movieUrl);
         if (results.length > 0) {
-          results.sort((a, b) => {
-            if (a.behaviorHints.isDirect !== b.behaviorHints.isDirect) {
-              return b.behaviorHints.isDirect ? -1 : 1;
-            }
-            const langOrder = (d: string) => d.includes('Latino') ? 0 : d.includes('Subtitulado') ? 1 : 2;
-            return langOrder(a.description) - langOrder(b.description);
-          });
-          return results;
+          // Merge direct streams with cuevana.gs external links
+          const merged = [...results, ...gsExternalLinks];
+          merged.sort((a, b) => {
+              // 1. Direct playable first
+              if (a.behaviorHints.isDirect !== b.behaviorHints.isDirect) {
+                return b.behaviorHints.isDirect ? -1 : 1;
+              }
+              // 2. Quality from description
+              const qualScore = (d: string) => d.includes('4K') ? 4 : d.includes('1080') ? 3 : d.includes('720') ? 2 : d.includes('480') ? 1 : 3;
+              const qDiff = qualScore(b.description) - qualScore(a.description);
+              if (qDiff !== 0) return qDiff;
+              // 3. Language preference
+              const langOrder = (d: string) => d.includes('Latino') ? 0 : d.includes('Subtitulado') ? 1 : 2;
+              return langOrder(a.description) - langOrder(b.description);
+            });
+          return merged;
         }
 
       } catch (error) {
@@ -428,7 +561,8 @@ async function scrapeCuevana(queryStr: string, serverOrigin: string, expectedYea
     }
   }
 
-  return [];
+  // If no direct streams were found but cuevana.gs had results, return those
+  return gsExternalLinks;
 }
 
 /**

@@ -16,7 +16,12 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useQuery } from '@tanstack/react-query';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
+import { useWatchlistStore } from '@/stores/watchlistStore';
+import { getDetails } from '@/lib/tmdb';
+import { MediaCard } from '@/components/MediaCard';
+import { ActivityIndicator, ScrollView } from 'react-native';
 
 type WatchlistTab = 'want_to_watch' | 'watching' | 'watched';
 
@@ -30,6 +35,26 @@ export default function WatchlistScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const [activeTab, setActiveTab] = useState<WatchlistTab>('want_to_watch');
+
+  const { items, isLoading, loadWatchlist } = useWatchlistStore();
+
+  React.useEffect(() => {
+    loadWatchlist();
+  }, []);
+
+  const filteredItems = items.filter(item => item.status === activeTab);
+
+  const { data: mediaDetails, isLoading: detailsLoading } = useQuery({
+    queryKey: ['watchlistDetails', filteredItems.map(i => i.tmdb_id)],
+    queryFn: async () => {
+      if (filteredItems.length === 0) return [];
+      const results = await Promise.all(
+        filteredItems.map(item => getDetails(parseInt(item.tmdb_id), item.media_type))
+      );
+      return results;
+    },
+    enabled: filteredItems.length > 0,
+  });
 
   const contentMaxWidth = Platform.OS === 'web' && width > 1200 ? 1200 : '100%';
   const alignSelf = Platform.OS === 'web' && width > 1200 ? 'center' : 'auto';
@@ -68,18 +93,34 @@ export default function WatchlistScreen() {
         ))}
       </View>
 
-      {/* Empty State */}
-      <View style={styles.emptyContainer}>
-        <Ionicons
-          name="film-outline"
-          size={64}
-          color={Colors.textTertiary}
-        />
-        <Text style={styles.emptyTitle}>Tu lista está vacía</Text>
-        <Text style={styles.emptySubtitle}>
-          Explora el catálogo y agrega películas o series que quieras ver
-        </Text>
-      </View>
+      {/* Content */}
+      {isLoading || (filteredItems.length > 0 && detailsLoading) ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      ) : filteredItems.length === 0 || !mediaDetails || mediaDetails.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Ionicons
+            name="film-outline"
+            size={64}
+            color={Colors.textTertiary}
+          />
+          <Text style={styles.emptyTitle}>Tu lista está vacía</Text>
+          <Text style={styles.emptySubtitle}>
+            Explora el catálogo y agrega películas o series a esta lista
+          </Text>
+        </View>
+      ) : (
+        <ScrollView contentContainerStyle={styles.gridContent} showsVerticalScrollIndicator={false}>
+          <View style={styles.gridRow}>
+            {mediaDetails.map((item) => (
+              <View key={item.id} style={styles.gridItem}>
+                <MediaCard item={item} size="lg" />
+              </View>
+            ))}
+          </View>
+        </ScrollView>
+      )}
       </View>
     </View>
   );
@@ -142,5 +183,23 @@ const styles = StyleSheet.create({
     color: Colors.textTertiary,
     textAlign: 'center',
     marginTop: Spacing.sm,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  gridContent: {
+    paddingHorizontal: Spacing.md,
+    paddingBottom: 100,
+  },
+  gridRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-start',
+    gap: Spacing.xl,
+  },
+  gridItem: {
+    marginBottom: Spacing.lg,
   },
 });

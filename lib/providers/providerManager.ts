@@ -70,8 +70,15 @@ class ProviderManager {
               const mappedStreams: StreamResult[] = res.streams.map((s: any) => ({
                 title: s.description || s.title || s.name || 'Stream Desconocido',
                 url: s.url || s.externalUrl,
-                quality: (s.description?.includes('4K') || s.name?.includes('4K')) ? '4K' as const : '1080p' as const,
-                language: s.description?.toLowerCase().includes('sub') ? 'en-sub' : 'es-lat',
+                quality: (s.description?.match(/4K|2160/i)) ? '4K' as const 
+                  : (s.description?.match(/1080|FHD/i)) ? '1080p' as const 
+                  : (s.description?.match(/720/i)) ? '720p' as const 
+                  : (s.description?.match(/480|360/i)) ? '480p' as const 
+                  : '1080p' as const,
+                language: s.description?.toLowerCase().includes('latino') ? 'es-lat' 
+                  : s.description?.toLowerCase().includes('subtitulado') ? 'en-sub' 
+                  : s.description?.toLowerCase().includes('español') ? 'es-es'
+                  : s.description?.toLowerCase().includes('sub') ? 'en-sub' : 'es-lat',
                 provider: s.name || 'Proveedor Externo',
                 type: (s.url?.includes('magnet:') || s.infoHash) ? 'torrent' as const : 'direct' as const,
                 isDownload: s.isDownload ?? (s.name?.includes('📥') || s.description?.includes('📥')),
@@ -118,8 +125,15 @@ class ProviderManager {
         const mappedStreams: StreamResult[] = (result.value.streams || []).map((s: any) => ({
           title: s.description || s.title || s.name || 'Stream Desconocido',
           url: s.url || s.externalUrl,
-          quality: (s.description?.includes('4K') || s.name?.includes('4K')) ? '4K' as const : '1080p' as const,
-          language: s.description?.toLowerCase().includes('sub') ? 'en-sub' : 'es-lat',
+          quality: (s.description?.match(/4K|2160/i)) ? '4K' as const 
+                  : (s.description?.match(/1080|FHD/i)) ? '1080p' as const 
+                  : (s.description?.match(/720/i)) ? '720p' as const 
+                  : (s.description?.match(/480|360/i)) ? '480p' as const 
+                  : '1080p' as const,
+                language: s.description?.toLowerCase().includes('latino') ? 'es-lat' 
+                  : s.description?.toLowerCase().includes('subtitulado') ? 'en-sub' 
+                  : s.description?.toLowerCase().includes('español') ? 'es-es'
+                  : s.description?.toLowerCase().includes('sub') ? 'en-sub' : 'es-lat',
           provider: s.name || 'Proveedor Externo',
           type: (s.url?.includes('magnet:') || s.infoHash) ? 'torrent' as const : 'direct' as const,
           isDownload: s.isDownload ?? (s.name?.includes('📥') || s.description?.includes('📥')),
@@ -136,7 +150,7 @@ class ProviderManager {
     // Collect from Cinecalidad API
     allStreams.push(...cinecalidadStreams);
 
-    // Sort streams by quality (highest first)
+    // Sort streams: direct playable first, then by quality (highest first), then by language preference
     const qualityOrder: Record<string, number> = {
       '4K': 4,
       '1080p': 3,
@@ -144,8 +158,25 @@ class ProviderManager {
       '480p': 1,
       'Unknown': 0,
     };
+    const langOrder = (lang: string) => {
+      if (lang === 'es-lat') return 0;  // Latino first
+      if (lang === 'es-es') return 1;   // Español Spain second
+      if (lang === 'en-sub') return 2;  // Subtitulado third
+      return 3;
+    };
 
-    allStreams.sort((a, b) => (qualityOrder[b.quality] || 0) - (qualityOrder[a.quality] || 0));
+    allStreams.sort((a, b) => {
+      // 1. Quality: highest first
+      const qualDiff = (qualityOrder[b.quality] || 0) - (qualityOrder[a.quality] || 0);
+      if (qualDiff !== 0) return qualDiff;
+
+      // 2. Direct playable streams (type === 'direct') over embeds
+      if (a.type === 'direct' && b.type !== 'direct') return -1;
+      if (b.type === 'direct' && a.type !== 'direct') return 1;
+
+      // 3. Language preference
+      return langOrder(a.language) - langOrder(b.language);
+    });
 
     return { streams: allStreams, subtitles: allSubtitles };
   }

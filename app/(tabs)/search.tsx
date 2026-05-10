@@ -21,8 +21,9 @@ import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MediaCard } from '@/components/MediaCard';
+import { SkeletonMediaCard } from '@/components/ui/SkeletonMediaCard';
 import { queryKeys } from '@/lib/query-client';
-import { search, getTrending } from '@/lib/tmdb';
+import { search, getTrending, getGenres, getDiscover } from '@/lib/tmdb';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 
 export default function SearchScreen() {
@@ -40,6 +41,8 @@ export default function SearchScreen() {
     }, 400);
   }, []);
 
+  const [selectedGenre, setSelectedGenre] = useState<number | null>(null);
+
   // Search results
   const searchResults = useQuery({
     queryKey: queryKeys.search(debouncedQuery),
@@ -47,15 +50,37 @@ export default function SearchScreen() {
     enabled: debouncedQuery.length >= 2,
   });
 
+  // Genres
+  const genres = useQuery({
+    queryKey: ['genres', 'movie'],
+    queryFn: () => getGenres('movie'),
+  });
+
+  // Discover by genre
+  const discover = useQuery({
+    queryKey: ['discover', 'movie', selectedGenre],
+    queryFn: () => getDiscover('movie', selectedGenre ? [selectedGenre] : []),
+    enabled: selectedGenre !== null && debouncedQuery.length < 2,
+  });
+
   // Default: trending when no search
   const trending = useQuery({
     queryKey: queryKeys.trending('movie', 'day'),
     queryFn: () => getTrending('movie', 'day'),
-    enabled: debouncedQuery.length < 2,
+    enabled: debouncedQuery.length < 2 && selectedGenre === null,
   });
 
-  const data = debouncedQuery.length >= 2 ? searchResults.data : trending.data;
-  const isLoading = debouncedQuery.length >= 2 ? searchResults.isLoading : trending.isLoading;
+  const data = debouncedQuery.length >= 2 
+    ? searchResults.data 
+    : selectedGenre !== null 
+    ? discover.data 
+    : trending.data;
+    
+  const isLoading = debouncedQuery.length >= 2 
+    ? searchResults.isLoading 
+    : selectedGenre !== null 
+    ? discover.isLoading 
+    : trending.isLoading;
   
   const isDesktop = Platform.OS === 'web' && width > 768;
   const contentMaxWidth = isDesktop ? 1200 : '100%';
@@ -93,18 +118,51 @@ export default function SearchScreen() {
         </View>
       </View>
 
+      {/* Genres */}
+      {debouncedQuery.length < 2 && genres.data && (
+        <View style={styles.genresContainer}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={{ flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg }}>
+              <Text 
+                style={[styles.genreTab, selectedGenre === null && styles.genreTabActive]}
+                onPress={() => setSelectedGenre(null)}
+              >
+                Todas
+              </Text>
+              {genres.data.map(genre => (
+                <Text 
+                  key={genre.id}
+                  style={[styles.genreTab, selectedGenre === genre.id && styles.genreTabActive]}
+                  onPress={() => setSelectedGenre(genre.id)}
+                >
+                  {genre.name}
+                </Text>
+              ))}
+            </View>
+          </ScrollView>
+        </View>
+      )}
+
       {/* Section Title */}
       <Text style={styles.sectionTitle}>
         {debouncedQuery.length >= 2
           ? `Resultados para "${debouncedQuery}"`
+          : selectedGenre !== null
+          ? 'Explorar Género'
           : 'Tendencias del Día'}
       </Text>
 
       {/* Results Grid */}
       {isLoading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-        </View>
+        <ScrollView contentContainerStyle={styles.gridContent} showsVerticalScrollIndicator={false} scrollEnabled={false}>
+          <View style={styles.gridRow}>
+            {Array.from({ length: 12 }).map((_, i) => (
+              <View key={`skeleton-${i}`} style={styles.gridItem}>
+                <SkeletonMediaCard size="lg" />
+              </View>
+            ))}
+          </View>
+        </ScrollView>
       ) : data && data.length > 0 ? (
         <ScrollView contentContainerStyle={styles.gridContent} showsVerticalScrollIndicator={false}>
           <View style={styles.gridRow}>
@@ -196,5 +254,22 @@ const styles = StyleSheet.create({
     color: Colors.textTertiary,
     textAlign: 'center',
     marginTop: Spacing.sm,
+  },
+  genresContainer: {
+    marginBottom: Spacing.md,
+  },
+  genreTab: {
+    ...Typography.bodySmall,
+    color: Colors.textSecondary,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.pill,
+    overflow: 'hidden',
+  },
+  genreTabActive: {
+    color: Colors.textPrimary,
+    backgroundColor: Colors.primary,
+    fontWeight: 'bold',
   },
 });

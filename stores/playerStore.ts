@@ -7,11 +7,16 @@
 import { create } from 'zustand';
 import { supabase, WatchingProgress } from '@/lib/supabase';
 import { useAuthStore } from './authStore';
+import { StreamResult, SubtitleResult } from '@/lib/providers/types';
 
 interface PlayerState {
   progressHistory: WatchingProgress[];
+  activeStreams: StreamResult[];
+  activeSubtitles: SubtitleResult[];
   
   // Actions
+  setActiveStreams: (streams: StreamResult[]) => void;
+  setActiveSubtitles: (subtitles: SubtitleResult[]) => void;
   loadProgressHistory: () => Promise<void>;
   updateProgress: (data: {
     tmdbId: string;
@@ -25,6 +30,11 @@ interface PlayerState {
 
 export const usePlayerStore = create<PlayerState>((set, get) => ({
   progressHistory: [],
+  activeStreams: [],
+  activeSubtitles: [],
+
+  setActiveStreams: (streams) => set({ activeStreams: streams }),
+  setActiveSubtitles: (subtitles) => set({ activeSubtitles: subtitles }),
 
   loadProgressHistory: async () => {
     const userId = useAuthStore.getState().currentUser?.id;

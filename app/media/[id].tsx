@@ -53,7 +53,7 @@ import { useWatchlistStore } from '@/stores/watchlistStore';
 import { usePlayerStore } from '@/stores/playerStore';
 import { useDownloadStore } from '@/stores/downloadStore';
 import { downloadManager } from '@/lib/downloadManager';
-import { supabase } from '@/lib/supabase';
+import { ensureSupabaseSession, supabase } from '@/lib/supabase';
 
 // Cinematic ratio calculated dynamically in component
 
@@ -543,6 +543,8 @@ export default function MediaDetailScreen() {
               <HapticPressable 
                 onPress={async () => {
                   try {
+                    await ensureSupabaseSession();
+
                     const { error } = await supabase.from('vip_requests').insert({
                       tmdb_id: details.id.toString(),
                       media_type: mediaType,
@@ -589,6 +591,8 @@ export default function MediaDetailScreen() {
             <HapticPressable 
                 onPress={async () => {
                   try {
+                    await ensureSupabaseSession();
+
                     const { error } = await supabase.from('vip_requests').insert({
                       tmdb_id: details.id.toString(),
                       media_type: mediaType,

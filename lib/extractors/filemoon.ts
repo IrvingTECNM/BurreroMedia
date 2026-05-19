@@ -1,5 +1,5 @@
 import * as crypto from 'crypto';
-import { execSync } from 'child_process';
+import { curlFetch } from '@/lib/server/curl';
 
 /**
  * Filemoon AES-GCM Extractor
@@ -84,11 +84,8 @@ export async function extractFilemoon(embedUrl: string, referer?: string): Promi
       'X-Embed-Origin': origin, 
     };
     
-    const headerArgs = Object.entries(headers).map(([k, v]) => `-H "${k}: ${v}"`).join(' ');
-    const command = `curl -s -L --max-time 15 ${headerArgs} "${apiUrl}"`;
-    
     console.log(`[Filemoon Lib] Fetching API: ${apiUrl}`);
-    const response = execSync(command, { encoding: 'utf-8' });
+    const response = curlFetch(apiUrl, { headers });
     
     if (!response || !response.trim().startsWith('{')) {
       console.error('[Filemoon Lib] Invalid API response');

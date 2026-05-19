@@ -20,7 +20,7 @@ import { useRouter } from 'expo-router';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useProvidersStore } from '@/stores/providersStore';
-import { supabase } from '@/lib/supabase';
+import { ensureSupabaseSession, supabase } from '@/lib/supabase';
 
 interface SettingItemProps {
   icon: string;
@@ -61,6 +61,7 @@ export default function ProfileScreen() {
     queryKey: ['profileStats', currentUser?.id],
     queryFn: async () => {
       if (!currentUser?.id) return { movies: 0, tv: 0, recommendations: 0 };
+      await ensureSupabaseSession();
       
       const [moviesRes, tvRes, recsRes] = await Promise.all([
         supabase.from('watching_progress').select('*', { count: 'exact', head: true }).eq('user_id', currentUser.id).eq('media_type', 'movie'),

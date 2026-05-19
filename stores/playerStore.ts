@@ -5,7 +5,7 @@
  * No persist middleware — progress is loaded from Supabase on login.
  */
 import { create } from 'zustand';
-import { supabase, WatchingProgress } from '@/lib/supabase';
+import { ensureSupabaseSession, supabase, WatchingProgress } from '@/lib/supabase';
 import { useAuthStore } from './authStore';
 import { StreamResult, SubtitleResult } from '@/lib/providers/types';
 
@@ -41,6 +41,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (!userId) return;
 
     try {
+      await ensureSupabaseSession();
+
       const { data, error } = await supabase
         .from('watching_progress')
         .select('*')
@@ -70,6 +72,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     };
 
     try {
+      await ensureSupabaseSession();
+
       // Upsert progress
       const { error } = await supabase
         .from('watching_progress')

@@ -8,8 +8,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 
-const SUPABASE_URL = 'https://nvcvenpceghyfwkyvuah.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im52Y3ZlbnBjZWdoeWZ3a3l2dWFoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY1NDA5OTMsImV4cCI6MjA5MjExNjk5M30.HjzazOYQasnkEbjowNC5VLBWN27KKZ56Zgc62uJr1eU';
+const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  throw new Error('Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY environment variables');
+}
 
 /**
  * SSR-safe storage adapter for web.
@@ -44,6 +48,30 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     detectSessionInUrl: false,
   },
 });
+
+let anonymousSessionPromise: Promise<void> | null = null;
+
+/**
+ * Establishes a Supabase Auth session for RLS policies that require
+ * `authenticated`. The app still uses family profiles as its product-level
+ * identity, but database access no longer relies on a fully anonymous JWT.
+ */
+export function ensureSupabaseSession(): Promise<void> {
+  if (!anonymousSessionPromise) {
+    anonymousSessionPromise = (async () => {
+      const { data } = await supabase.auth.getSession();
+      if (data.session) return;
+
+      const { error } = await supabase.auth.signInAnonymously();
+      if (error) {
+        anonymousSessionPromise = null;
+        throw error;
+      }
+    })();
+  }
+
+  return anonymousSessionPromise;
+}
 
 // --- Database Types ---
 

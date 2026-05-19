@@ -1,5 +1,5 @@
 import * as cheerio from 'cheerio';
-import { execSync } from 'child_process';
+import { curlFetch as runCurlFetch } from '@/lib/server/curl';
 
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
@@ -42,16 +42,8 @@ function curlFetch(url: string, extraHeaders?: Record<string, string>): string {
     ...extraHeaders,
   };
 
-  const headerArgs = Object.entries(headers)
-    .map(([k, v]) => `-H "${k}: ${v}"`)
-    .join(' ');
-
   try {
-    const result = execSync(
-      `curl -s -L --max-time 15 ${headerArgs} "${url}"`,
-      { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }
-    );
-    return result;
+    return runCurlFetch(url, { headers });
   } catch {
     return '';
   }

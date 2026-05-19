@@ -1,10 +1,10 @@
 import * as cheerio from 'cheerio';
-import { execSync } from 'child_process';
 import { extractFilemoon as extractFilemoonNew } from '../../../../lib/extractors/filemoon';
 import { extractStreamtape } from '../../../../lib/extractors/streamtape';
 import { extractStreamSB } from '../../../../lib/extractors/streamsb';
+import { curlFetch as runCurlFetch } from '../../../../lib/server/curl';
 
-const TMDB_API_KEY = 'ded2a315221e6d1d975e15f43377321d';
+const TMDB_API_KEY = process.env.TMDB_API_KEY || process.env.EXPO_PUBLIC_TMDB_API_KEY;
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const CUEVANA_BASE_URL = 'https://ww9.cuevana3.to';
 
@@ -27,9 +27,8 @@ function curlFetch(url: string, extraHeaders?: Record<string, string>): string {
     'Accept-Language': 'es-MX,es;q=0.9,en;q=0.8',
     ...extraHeaders,
   };
-  const headerArgs = Object.entries(headers).map(([k, v]) => `-H "${k}: ${v}"`).join(' ');
   try {
-    return execSync(`curl -s -L --max-time 15 ${headerArgs} "${url}"`, { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
+    return runCurlFetch(url, { headers });
   } catch {
     return '';
   }
@@ -86,6 +85,8 @@ interface TMDBInfo {
  */
 async function getTitleFromTMDB(tmdbId: number, type: string): Promise<TMDBInfo | null> {
   try {
+    if (!TMDB_API_KEY) return null;
+
     // Fetch main info (es-MX)
     const mainRes = await fetch(`${TMDB_BASE}/${type}/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-MX`);
     if (!mainRes.ok) return null;

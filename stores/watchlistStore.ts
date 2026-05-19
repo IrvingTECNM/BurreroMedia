@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { supabase } from '@/lib/supabase';
+import { ensureSupabaseSession, supabase } from '@/lib/supabase';
 import { useAuthStore } from './authStore';
 
 export type WatchlistStatus = 'want_to_watch' | 'watching' | 'watched';
@@ -32,6 +32,8 @@ export const useWatchlistStore = create<WatchlistState>((set, get) => ({
 
     set({ isLoading: true });
     try {
+      await ensureSupabaseSession();
+
       const { data, error } = await supabase
         .from('watchlist')
         .select('*')
@@ -53,6 +55,8 @@ export const useWatchlistStore = create<WatchlistState>((set, get) => ({
     const existing = get().items.find(i => i.tmdb_id === tmdbId);
 
     try {
+      await ensureSupabaseSession();
+
       if (existing) {
         // Remove
         const { error } = await supabase
@@ -93,6 +97,8 @@ export const useWatchlistStore = create<WatchlistState>((set, get) => ({
     if (!userId) return false;
 
     try {
+      await ensureSupabaseSession();
+
       const { error } = await supabase
         .from('watchlist')
         .update({ status })

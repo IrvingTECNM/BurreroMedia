@@ -8,7 +8,7 @@
  * to avoid issues with zustand persist + SSR + AsyncStorage.
  */
 import { create } from 'zustand';
-import { supabase, Profile } from '@/lib/supabase';
+import { ensureSupabaseSession, supabase, Profile } from '@/lib/supabase';
 import { Platform } from 'react-native';
 
 interface AuthState {
@@ -108,6 +108,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoading: true });
 
     try {
+      await ensureSupabaseSession();
+
       // Add a timeout so it doesn't hang forever
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 8000);
@@ -175,6 +177,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   createProfile: async ({ username, display_name, avatar_color, pin }) => {
     console.log('[AuthStore] Creating profile:', username);
     try {
+      await ensureSupabaseSession();
+
       const { data, error } = await supabase
         .from('profiles')
         .insert({
@@ -210,6 +214,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   updateProfile: async (profileId: string, updates: Partial<Profile>) => {
     console.log('[AuthStore] Updating profile:', profileId);
     try {
+      await ensureSupabaseSession();
+
       const { error } = await supabase
         .from('profiles')
         .update(updates)

@@ -5,12 +5,16 @@
 -- Profiles table (stores user Netflix-style profiles)
 CREATE TABLE IF NOT EXISTS public.profiles (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  owner_id uuid DEFAULT auth.uid(),
   username text UNIQUE NOT NULL,
   display_name text NOT NULL,
   avatar_color text DEFAULT '#E50914',
   pin text,
   created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS owner_id uuid DEFAULT auth.uid();
 
 -- Watchlist table
 CREATE TABLE IF NOT EXISTS public.watchlist (
@@ -56,23 +60,56 @@ ALTER TABLE public.recommendations ENABLE ROW LEVEL SECURITY;
 
 -- 3. Create RLS Policies
 
--- For this specific app structure where all users potentially share the same Supabase anon key 
--- to view profiles (like a family Netflix account), we allow open access to read profiles.
--- (In a real production app with individual accounts, this would use auth.uid())
+DROP POLICY IF EXISTS "Profiles are viewable by everyone" ON public.profiles;
+DROP POLICY IF EXISTS "Profiles can be inserted by everyone" ON public.profiles;
+DROP POLICY IF EXISTS "Profiles can be updated by everyone" ON public.profiles;
+DROP POLICY IF EXISTS "Profiles readable by authenticated users" ON public.profiles;
+DROP POLICY IF EXISTS "Profiles insertable by authenticated users" ON public.profiles;
+DROP POLICY IF EXISTS "Profiles updatable by owner" ON public.profiles;
+DROP POLICY IF EXISTS "Watchlist is open" ON public.watchlist;
+DROP POLICY IF EXISTS "Watchlist manageable by authenticated users" ON public.watchlist;
+DROP POLICY IF EXISTS "Watching progress is open" ON public.watching_progress;
+DROP POLICY IF EXISTS "Watching progress manageable by authenticated users" ON public.watching_progress;
+DROP POLICY IF EXISTS "Recommendations are open" ON public.recommendations;
+DROP POLICY IF EXISTS "Recommendations manageable by authenticated users" ON public.recommendations;
 
--- Profiles: Anyone can read, insert, and update profiles (family mode)
-CREATE POLICY "Profiles are viewable by everyone" ON public.profiles FOR SELECT USING (true);
-CREATE POLICY "Profiles can be inserted by everyone" ON public.profiles FOR INSERT WITH CHECK (true);
-CREATE POLICY "Profiles can be updated by everyone" ON public.profiles FOR UPDATE USING (true);
+-- The app uses family profiles as product identity, but database access must
+-- still require a Supabase Auth session. The client creates an anonymous Auth
+-- session before querying these tables.
 
--- Watchlist: Anyone can read and manage (since auth is custom over anon key)
-CREATE POLICY "Watchlist is open" ON public.watchlist FOR ALL USING (true);
+CREATE POLICY "Profiles readable by authenticated users"
+  ON public.profiles FOR SELECT
+  TO authenticated
+  USING (true);
 
--- Watching Progress: Anyone can read and manage 
-CREATE POLICY "Watching progress is open" ON public.watching_progress FOR ALL USING (true);
+CREATE POLICY "Profiles insertable by authenticated users"
+  ON public.profiles FOR INSERT
+  TO authenticated
+  WITH CHECK (auth.uid() IS NOT NULL);
 
--- Recommendations: Anyone can read and manage 
-CREATE POLICY "Recommendations are open" ON public.recommendations FOR ALL USING (true);
+CREATE POLICY "Profiles updatable by owner"
+  ON public.profiles FOR UPDATE
+  TO authenticated
+  USING (owner_id = auth.uid())
+  WITH CHECK (owner_id = auth.uid());
+
+CREATE POLICY "Watchlist manageable by authenticated users"
+  ON public.watchlist FOR ALL
+  TO authenticated
+  USING (auth.uid() IS NOT NULL)
+  WITH CHECK (auth.uid() IS NOT NULL);
+
+CREATE POLICY "Watching progress manageable by authenticated users"
+  ON public.watching_progress FOR ALL
+  TO authenticated
+  USING (auth.uid() IS NOT NULL)
+  WITH CHECK (auth.uid() IS NOT NULL);
+
+CREATE POLICY "Recommendations manageable by authenticated users"
+  ON public.recommendations FOR ALL
+  TO authenticated
+  USING (auth.uid() IS NOT NULL)
+  WITH CHECK (auth.uid() IS NOT NULL);
 
 -- Enable realtime for the recommendations table
 alter publication supabase_realtime add table recommendations;

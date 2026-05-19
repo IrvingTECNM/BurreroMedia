@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { curlFetch as runCurlFetch, curlRedirectUrl } from '@/lib/server/curl';
 
 /**
  * StreamTape / StringTape Extractor
@@ -20,9 +20,8 @@ function curlFetch(url: string, extraHeaders?: Record<string, string>): string {
     'Accept-Language': 'es-MX,es;q=0.9,en;q=0.8',
     ...extraHeaders,
   };
-  const headerArgs = Object.entries(headers).map(([k, v]) => `-H "${k}: ${v}"`).join(' ');
   try {
-    return execSync(`curl -s -L --max-time 15 ${headerArgs} "${url}"`, { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
+    return runCurlFetch(url, { headers });
   } catch {
     return '';
   }
@@ -79,10 +78,13 @@ export async function extractStreamtape(embedUrl: string): Promise<string | null
       
       // Follow redirect to get the actual MP4 URL
       try {
-        const redirectResult = execSync(
-          `curl -s -o /dev/null -w "%{redirect_url}" --max-time 10 -H "User-Agent: ${BROWSER_UA}" -H "Referer: ${normalizedUrl}" "${fullUrl}"`,
-          { encoding: 'utf-8' }
-        ).trim();
+        const redirectResult = curlRedirectUrl(fullUrl, {
+          headers: {
+            'User-Agent': BROWSER_UA,
+            'Referer': normalizedUrl,
+          },
+          maxTimeSeconds: 10,
+        });
         
         if (redirectResult && redirectResult.startsWith('http')) {
           console.log(`[Extractor:StreamTape] ✅ Final MP4: ${redirectResult.substring(0, 80)}...`);

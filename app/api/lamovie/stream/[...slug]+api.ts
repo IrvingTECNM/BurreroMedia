@@ -1,7 +1,7 @@
 import * as cheerio from 'cheerio';
-import { execSync } from 'child_process';
+import { curlFetch as runCurlFetch } from '../../../../lib/server/curl';
 
-const TMDB_API_KEY = 'ded2a315221e6d1d975e15f43377321d';
+const TMDB_API_KEY = process.env.TMDB_API_KEY || process.env.EXPO_PUBLIC_TMDB_API_KEY;
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const LAMOVIE_BASE = 'https://la.movie';
 
@@ -22,16 +22,8 @@ function curlFetch(url: string, extraHeaders?: Record<string, string>): string {
     ...extraHeaders,
   };
 
-  const headerArgs = Object.entries(headers)
-    .map(([k, v]) => `-H "${k}: ${v}"`)
-    .join(' ');
-
   try {
-    const result = execSync(
-      `curl -s -L --max-time 15 ${headerArgs} "${url}"`,
-      { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }
-    );
-    return result;
+    return runCurlFetch(url, { headers });
   } catch (err) {
     console.error('[la.movie API] Failed for:', url);
     return '';
@@ -46,6 +38,8 @@ interface TMDBInfo {
 
 async function getTitleFromTMDB(tmdbId: number, type: string): Promise<TMDBInfo | null> {
   try {
+    if (!TMDB_API_KEY) return null;
+
     const mainRes = await fetch(`${TMDB_BASE}/${type}/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-MX`);
     if (!mainRes.ok) return null;
     const main = await mainRes.json();

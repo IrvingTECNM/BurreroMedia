@@ -2,10 +2,10 @@
  * TMDB API Configuration
  * https://developer.themoviedb.org/docs
  *
- * Replace TMDB_API_KEY with your own key from themoviedb.org
+ * Configure EXPO_PUBLIC_TMDB_API_KEY in the environment.
  */
 
-const TMDB_API_KEY = 'ded2a315221e6d1d975e15f43377321d';
+const TMDB_API_KEY = process.env.EXPO_PUBLIC_TMDB_API_KEY;
 const BASE_URL = 'https://api.themoviedb.org/3';
 const IMAGE_BASE_URL = 'https://image.tmdb.org/t/p';
 
@@ -107,6 +107,10 @@ export type BackdropSize = 'w300' | 'w780' | 'w1280' | 'original';
 // --- Helper Functions ---
 
 function buildUrl(path: string, params: Record<string, string> = {}): string {
+  if (!TMDB_API_KEY) {
+    throw new Error('Missing EXPO_PUBLIC_TMDB_API_KEY environment variable');
+  }
+
   const url = new URL(`${BASE_URL}${path}`);
   url.searchParams.set('api_key', TMDB_API_KEY);
   url.searchParams.set('language', 'es-MX'); // Default to Spanish (Mexico)

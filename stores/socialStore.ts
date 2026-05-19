@@ -4,7 +4,7 @@
  * Manages the social feed: recommendations, activity, and real-time updates.
  */
 import { create } from 'zustand';
-import { supabase, Recommendation, Profile } from '@/lib/supabase';
+import { ensureSupabaseSession, supabase, Recommendation, Profile } from '@/lib/supabase';
 
 export interface FeedItem {
   id: string;
@@ -45,6 +45,8 @@ export const useSocialStore = create<SocialState>((set) => ({
   loadFeed: async () => {
     set({ isLoading: true });
     try {
+      await ensureSupabaseSession();
+
       const { data, error } = await supabase
         .from('recommendations')
         .select(`
@@ -75,6 +77,8 @@ export const useSocialStore = create<SocialState>((set) => ({
 
   sendRecommendation: async ({ fromUserId, toUserId, tmdbId, mediaType, message }) => {
     try {
+      await ensureSupabaseSession();
+
       const { error } = await supabase.from('recommendations').insert({
         from_user: fromUserId,
         to_user: toUserId,
@@ -93,6 +97,8 @@ export const useSocialStore = create<SocialState>((set) => ({
 
   loadMyRecommendations: async (userId: string) => {
     try {
+      await ensureSupabaseSession();
+
       const { data, error } = await supabase
         .from('recommendations')
         .select('*')

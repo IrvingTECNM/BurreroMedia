@@ -1,6 +1,9 @@
 const https = require('https');
 
-const TMDB_API_KEY = 'ded2a315221e6d1d975e15f43377321d';
+const TMDB_API_KEY = process.env.TMDB_API_KEY || process.env.EXPO_PUBLIC_TMDB_API_KEY;
+if (!TMDB_API_KEY) {
+  throw new Error('Missing TMDB_API_KEY or EXPO_PUBLIC_TMDB_API_KEY');
+}
 const url = `https://api.themoviedb.org/3/trending/movie/week?api_key=${TMDB_API_KEY}`;
 
 https.get(url, (res) => {

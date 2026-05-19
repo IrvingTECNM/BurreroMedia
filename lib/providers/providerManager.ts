@@ -53,8 +53,24 @@ class ProviderManager {
     // Helper to pause execution
     const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+    // Set to keep track of seen URLs to prevent any duplicates across progressive updates
+    const seenUrls = new Set<string>();
+
+    const safeOnProgress = (newStreams: StreamResult[]) => {
+      if (!onProgress) return;
+      const filtered = newStreams.filter(s => {
+        if (!s.url) return true;
+        if (seenUrls.has(s.url)) return false;
+        seenUrls.add(s.url);
+        return true;
+      });
+      if (filtered.length > 0) {
+        onProgress(filtered);
+      }
+    };
+
     // Query all registered IProvider providers in parallel
-    const providerResults = Promise.allSettled(
+    const providerSettled = await Promise.allSettled(
       activeProviders.map(async (p) => {
         let retries = 1;
         let lastError: any = null;
@@ -83,7 +99,7 @@ class ProviderManager {
                 type: (s.url?.includes('magnet:') || s.infoHash) ? 'torrent' as const : 'direct' as const,
                 isDownload: s.isDownload ?? (s.name?.includes('📥') || s.description?.includes('📥')),
               }));
-              onProgress(mappedStreams);
+              safeOnProgress(mappedStreams);
             }
             
             return res;
@@ -100,20 +116,6 @@ class ProviderManager {
         throw lastError;
       })
     );
-
-    // Also query our built-in Cinecalidad HTTP API wrapped with progress trigger
-    const cinecalidadResult = (async () => {
-      const streams = await this.fetchCinecalidadStreams(tmdbId, mediaType);
-      if (streams && streams.length > 0 && onProgress) {
-        onProgress(streams);
-      }
-      return streams;
-    })();
-
-    const [providerSettled, cinecalidadStreams] = await Promise.all([
-      providerResults,
-      cinecalidadResult,
-    ]);
 
     const allStreams: StreamResult[] = [];
     const allSubtitles: SubtitleResult[] = [];
@@ -147,8 +149,14 @@ class ProviderManager {
       }
     });
 
-    // Collect from Cinecalidad API
-    allStreams.push(...cinecalidadStreams);
+    // Deduplicate all collected streams by URL
+    const finalSeenUrls = new Set<string>();
+    const uniqueStreams = allStreams.filter(s => {
+      if (!s.url) return true;
+      if (finalSeenUrls.has(s.url)) return false;
+      finalSeenUrls.add(s.url);
+      return true;
+    });
 
     // Sort streams: direct playable first, then by quality (highest first), then by language preference
     const qualityOrder: Record<string, number> = {
@@ -165,7 +173,7 @@ class ProviderManager {
       return 3;
     };
 
-    allStreams.sort((a, b) => {
+    uniqueStreams.sort((a, b) => {
       // 1. Quality: highest first
       const qualDiff = (qualityOrder[b.quality] || 0) - (qualityOrder[a.quality] || 0);
       if (qualDiff !== 0) return qualDiff;
@@ -178,45 +186,7 @@ class ProviderManager {
       return langOrder(a.language) - langOrder(b.language);
     });
 
-    return { streams: allStreams, subtitles: allSubtitles };
-  }
-
-  /**
-   * Fetch streams from our built-in Cinecalidad serverless API.
-   * Works on both localhost and production (Vercel).
-   */
-  private async fetchCinecalidadStreams(tmdbId: string, mediaType: string): Promise<StreamResult[]> {
-    try {
-      // Determine base URL dynamically
-      let baseUrl = '';
-      if (typeof window !== 'undefined') {
-        baseUrl = window.location.origin;
-      } else {
-        baseUrl = 'http://localhost:8081';
-      }
-
-      const apiUrl = `${baseUrl}/api/cinecalidad/stream/${mediaType}/${tmdbId}`;
-      console.log('[ProviderManager] Fetching Cinecalidad API:', apiUrl);
-
-      const response = await fetch(apiUrl);
-      if (!response.ok) return [];
-
-      const data = await response.json();
-      
-      // Map raw Cinecalidad response to StreamResult format
-      return (data.streams || []).map((s: any) => ({
-        title: s.description || s.name || 'Cinecalidad',
-        url: s.url,
-        quality: s.description?.includes('4K') ? '4K' as const : '1080p' as const,
-        language: 'es-lat',
-        provider: 'Cinecalidad',
-        type: s.url?.includes('magnet:') ? 'torrent' as const : 'direct' as const,
-        isDownload: s.isDownload ?? s.description?.includes('📥'),
-      }));
-    } catch (error) {
-      console.error('[ProviderManager] Cinecalidad API error:', error);
-      return [];
-    }
+    return { streams: uniqueStreams, subtitles: allSubtitles };
   }
 }
 

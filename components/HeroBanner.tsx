@@ -40,10 +40,10 @@ export function HeroBanner({ item, isLoading = false }: HeroBannerProps) {
   const isTablet = width >= 768 && width < 1024;
   
   const dynamicHeight = isDesktop
-    ? Math.max(Math.min(height * 0.75, width / 2.35), 500)
+    ? Math.max(Math.min(height * 0.68, width / 2.55), 460)
     : isTablet
-    ? Math.min(height * 0.5, 450)
-    : MediaDimensions.heroHeight;
+    ? Math.min(height * 0.46, 420)
+    : Math.min(MediaDimensions.heroHeight, 410);
 
   const mediaType = item.media_type || (item.first_air_date ? 'tv' : 'movie');
   const rating = getRatingStars(item.vote_average);
@@ -60,8 +60,8 @@ export function HeroBanner({ item, isLoading = false }: HeroBannerProps) {
 
       {/* Gradient Overlay */}
       <LinearGradient
-        colors={['transparent', 'rgba(10, 10, 15, 0.4)', 'rgba(10, 10, 15, 0.85)', '#0A0A0F']}
-        locations={[0, 0.4, 0.75, 1]}
+        colors={['rgba(10, 10, 15, 0.04)', 'rgba(10, 10, 15, 0.38)', 'rgba(10, 10, 15, 0.82)', Colors.background]}
+        locations={[0, 0.36, 0.76, 1]}
         style={styles.gradient}
       />
 
@@ -103,11 +103,16 @@ export function HeroBanner({ item, isLoading = false }: HeroBannerProps) {
             icon={<Ionicons name="play" size={18} color={Colors.textPrimary} />}
           />
           <Button
-            title="Mi Lista"
-            onPress={() => {}}
-            variant="secondary"
+            title="Detalles"
+            onPress={() =>
+              router.push({
+                pathname: '/media/[id]',
+                params: { id: item.id.toString(), type: mediaType },
+              })
+            }
+            variant="ghost"
             size="md"
-            icon={<Ionicons name="add" size={18} color={Colors.textPrimary} />}
+            icon={<Ionicons name="information-circle-outline" size={18} color={Colors.textPrimary} />}
             style={styles.secondaryButton}
           />
         </View>
@@ -135,6 +140,7 @@ const styles = StyleSheet.create({
     right: 0,
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.xl,
+    maxWidth: 760,
   },
   badges: {
     flexDirection: 'row',
@@ -145,18 +151,23 @@ const styles = StyleSheet.create({
     ...Typography.hero,
     color: Colors.textPrimary,
     marginBottom: Spacing.sm,
+    textShadowColor: 'rgba(0, 0, 0, 0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 8,
   },
   overview: {
     ...Typography.bodySmall,
     color: Colors.textSecondary,
     marginBottom: Spacing.lg,
+    maxWidth: 620,
   },
   actions: {
     flexDirection: 'row',
     gap: Spacing.md,
   },
   secondaryButton: {
-    marginLeft: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.borderStrong,
   },
 });
 

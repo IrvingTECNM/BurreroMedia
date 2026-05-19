@@ -7,12 +7,12 @@ const corsHeaders = {
 export async function GET() {
   const manifest = {
     id: 'com.burreromedia.lamovie',
-    version: '1.0.0',
+    version: '2.0.0',
     name: 'La.Movie',
-    description: 'Buscador de películas en La.Movie (Latino/Subtitulado)',
+    description: 'Películas y Series en La.Movie (Latino/Subtitulado) — Vimeos, Goodstream, HLSWish',
     idPrefixes: ['tmdb:'],
     resources: ['stream'],
-    types: ['movie'],
+    types: ['movie', 'series'],
     catalogs: [],
     behaviorHints: {
       configurable: false,

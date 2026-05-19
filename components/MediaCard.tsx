@@ -65,7 +65,7 @@ export function MediaCard({
       <View style={[
         styles.posterContainer, 
         { width, height }, 
-        Shadows.md,
+        Shadows.sm,
         isHovered && styles.posterHovered
       ]}>
         <Image
@@ -88,14 +88,17 @@ export function MediaCard({
           </View>
         )}
 
-        {/* Rating badge */}
-
-        {showRating && item.vote_average > 0 && (
-          <View style={styles.ratingBadge}>
-            <Ionicons name="star" size={10} color={Colors.accent} />
-            <Text style={styles.ratingText}>{rating.toFixed(1)}</Text>
+        <View style={styles.topBadges}>
+          {showRating && item.vote_average > 0 && (
+            <View style={styles.ratingBadge}>
+              <Ionicons name="star" size={10} color={Colors.accent} />
+              <Text style={styles.ratingText}>{rating.toFixed(1)}</Text>
+            </View>
+          )}
+          <View style={styles.typeBadge}>
+            <Text style={styles.typeText}>{mediaType === 'tv' ? 'Serie' : 'Peli'}</Text>
           </View>
-        )}
+        </View>
 
         {/* Recommendation badge */}
         {recommendedBy && (
@@ -128,22 +131,28 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: Colors.surfaceLight,
     borderWidth: 1,
-    borderColor: 'transparent',
+    borderColor: Colors.border,
   },
   posterHovered: {
-    borderColor: 'rgba(255, 255, 255, 0.4)',
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 15,
+    borderColor: Colors.borderStrong,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
   },
   poster: {
     borderRadius: BorderRadius.md,
   },
-  ratingBadge: {
+  topBadges: {
     position: 'absolute',
     top: Spacing.sm,
+    left: Spacing.sm,
     right: Spacing.sm,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: Spacing.xs,
+  },
+  ratingBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.75)',
@@ -151,6 +160,18 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: BorderRadius.sm,
     gap: 3,
+  },
+  typeBadge: {
+    backgroundColor: 'rgba(10, 10, 15, 0.72)',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.sm,
+  },
+  typeText: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+    fontSize: 10,
+    fontWeight: '700',
   },
   ratingText: {
     ...Typography.caption,

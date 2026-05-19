@@ -15,6 +15,7 @@ import {
   Platform,
   Animated,
   ScrollView,
+  useWindowDimensions,
 } from 'react-native';
 import { Video, ResizeMode, AVPlaybackStatus, Audio } from 'expo-av';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -24,6 +25,24 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { HapticPressable } from '@/components/ui/HapticPressable';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 import { usePlayerStore } from '@/stores/playerStore';
+import { StreamResult } from '@/lib/providers/types';
+
+const stableServers = ['vimeos', 'goodstream', 'hlswish', 'streamwish'];
+
+function getPlayerStreamTone(stream?: StreamResult) {
+  if (!stream) return { label: 'Servidor', color: Colors.textTertiary, icon: 'radio' as const };
+  const lower = `${stream.provider} ${stream.title} ${stream.url}`.toLowerCase();
+  if (stream.behaviorHints && !stream.behaviorHints.isDirect) {
+    return { label: 'Externo', color: Colors.warning, icon: 'open-outline' as const };
+  }
+  if (stableServers.some((server) => lower.includes(server))) {
+    return { label: stream.url.includes('.m3u8') ? 'HLS estable' : 'Estable', color: Colors.success, icon: 'flash' as const };
+  }
+  if (stream.url.includes('.m3u8') || stream.url.includes('/api/proxy')) {
+    return { label: 'Alta calidad', color: Colors.info, icon: 'radio' as const };
+  }
+  return { label: 'Alternativo', color: Colors.warning, icon: 'swap-horizontal' as const };
+}
 
 export default function PlayerScreen() {
   const { url, title, tmdbId, mediaType } = useLocalSearchParams<{ 
@@ -34,6 +53,7 @@ export default function PlayerScreen() {
   }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
   const videoRef = useRef<Video>(null);
   const { updateProgress, activeStreams, activeSubtitles } = usePlayerStore();
 
@@ -56,6 +76,10 @@ export default function PlayerScreen() {
   const currentUrl = activeStreams.length > 0 
     ? activeStreams[currentStreamIndex]?.url 
     : url;
+  const currentStream = activeStreams[currentStreamIndex];
+  const isCompact = width < 720;
+  const isShort = height < 520;
+  const currentStreamTone = getPlayerStreamTone(currentStream);
 
   // Inject Web Subtitles
   useEffect(() => {
@@ -360,7 +384,14 @@ export default function PlayerScreen() {
           {/* Top Gradient & Bar */}
           <LinearGradient
             colors={['rgba(0,0,0,0.8)', 'transparent']}
-            style={[styles.topGradient, { paddingTop: insets.top + Spacing.md }]}
+            style={[
+              styles.topGradient,
+              {
+                paddingTop: insets.top + (isCompact ? Spacing.sm : Spacing.md),
+                paddingHorizontal: isCompact ? Spacing.md : Spacing.xl,
+                paddingBottom: isShort ? Spacing.lg : Spacing.xxl,
+              },
+            ]}
             pointerEvents="box-none"
           >
             <View style={styles.topBar}>
@@ -368,7 +399,7 @@ export default function PlayerScreen() {
                 <Ionicons name="arrow-back" size={28} color={Colors.textPrimary} />
               </HapticPressable>
               
-              <Text style={styles.playerTitle} numberOfLines={1}>
+              <Text style={[styles.playerTitle, isCompact && styles.playerTitleCompact]} numberOfLines={isCompact ? 2 : 1}>
                 {title || 'Reproduciendo'}
               </Text>
 
@@ -380,10 +411,12 @@ export default function PlayerScreen() {
 
           {/* Menus */}
           {showSettingsMenu && (
-            <View style={styles.menuContainer}>
-              <Text style={styles.menuTitle}>Servidores Disponibles</Text>
+            <View style={[styles.menuContainer, isCompact && styles.menuContainerCompact]}>
+              <Text style={styles.menuTitle}>Servidores</Text>
               <ScrollView style={styles.menuList}>
-                {activeStreams.map((stream, index) => (
+                {activeStreams.map((stream, index) => {
+                  const tone = getPlayerStreamTone(stream);
+                  return (
                   <Pressable 
                     key={`${stream.provider}-${index}`} 
                     style={[styles.menuItem, currentStreamIndex === index && styles.menuItemActive]}
@@ -393,19 +426,25 @@ export default function PlayerScreen() {
                       setIsLoading(true);
                     }}
                   >
-                    <Ionicons name={currentStreamIndex === index ? "radio-button-on" : "radio-button-off"} size={20} color={currentStreamIndex === index ? Colors.primary : Colors.textPrimary} />
-                    <View style={{ marginLeft: Spacing.sm }}>
-                      <Text style={styles.menuItemText}>{stream.provider} - {stream.quality}</Text>
-                      <Text style={styles.menuItemSubtext}>{stream.language}</Text>
+                    <Ionicons name={tone.icon} size={20} color={tone.color} />
+                    <View style={styles.menuItemCopy}>
+                      <Text style={styles.menuItemText} numberOfLines={1}>{stream.provider} / {stream.quality}</Text>
+                      <Text style={styles.menuItemSubtext} numberOfLines={1}>{tone.label} / {stream.title || stream.language}</Text>
                     </View>
+                    {currentStreamIndex === index && (
+                      <View style={[styles.menuStatusBadge, { borderColor: tone.color, backgroundColor: `${tone.color}22` }]}>
+                        <Text style={[styles.menuStatusBadgeText, { color: tone.color }]}>Activo</Text>
+                      </View>
+                    )}
                   </Pressable>
-                ))}
+                  );
+                })}
               </ScrollView>
             </View>
           )}
 
           {showSubtitlesMenu && (
-            <View style={styles.menuContainer}>
+            <View style={[styles.menuContainer, isCompact && styles.menuContainerCompact]}>
               <Text style={styles.menuTitle}>Subtítulos</Text>
               <ScrollView style={styles.menuList}>
                 <Pressable 
@@ -444,11 +483,17 @@ export default function PlayerScreen() {
           {/* Bottom Gradient & Bar */}
           <LinearGradient
             colors={['transparent', 'rgba(0,0,0,0.9)']}
-            style={[styles.bottomGradient, { paddingBottom: insets.bottom + Spacing.lg }]}
+            style={[
+              styles.bottomGradient,
+              {
+                paddingBottom: insets.bottom + (isCompact ? Spacing.md : Spacing.lg),
+                paddingTop: isShort ? Spacing.xl : Spacing.xxxl,
+              },
+            ]}
             pointerEvents="box-none"
           >
             {/* Interactive Progress Bar */}
-            <View style={{ paddingHorizontal: Spacing.xl, marginBottom: Spacing.sm }}>
+            <View style={{ paddingHorizontal: isCompact ? Spacing.md : Spacing.xl, marginBottom: Spacing.sm }}>
               <Pressable
                 onLayout={(e) => setProgressBarWidth(e.nativeEvent.layout.width)}
                 onPress={(e) => {
@@ -472,8 +517,16 @@ export default function PlayerScreen() {
             </View>
 
             {/* Bottom Controls */}
-            <View style={styles.bottomBar}>
-              <View style={styles.bottomLeftControls}>
+            <View style={[styles.bottomBar, isCompact && styles.bottomBarCompact]}>
+              {isCompact && currentStream && (
+                <View style={styles.mobileStreamPill}>
+                  <Ionicons name={currentStreamTone.icon} size={14} color={currentStreamTone.color} />
+                  <Text style={styles.mobileStreamText} numberOfLines={1}>
+                    {currentStream.provider} / {currentStream.quality} / {currentStreamTone.label}
+                  </Text>
+                </View>
+              )}
+              <View style={[styles.bottomLeftControls, isCompact && styles.bottomControlsCompact]}>
                 <HapticPressable onPress={togglePlay} style={styles.iconBtn}>
                   <Ionicons name={isPlaying ? 'pause' : 'play'} size={28} color={Colors.textPrimary} />
                 </HapticPressable>
@@ -486,16 +539,18 @@ export default function PlayerScreen() {
                   <Ionicons name="play-forward" size={22} color={Colors.textPrimary} />
                 </HapticPressable>
 
+                {!isCompact && (
                 <HapticPressable onPress={() => setIsMuted(!isMuted)} style={styles.iconBtn}>
                   <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={26} color={Colors.textPrimary} />
                 </HapticPressable>
+                )}
 
                 <Text style={styles.timeText}>
                   {formatTime(position)}<Text style={styles.timeDurationText}> / {formatTime(duration)}</Text>
                 </Text>
               </View>
 
-              <View style={styles.bottomRightControls}>
+              <View style={[styles.bottomRightControls, isCompact && styles.bottomControlsCompact]}>
                 <HapticPressable 
                   onPress={() => {
                     setShowSubtitlesMenu(!showSubtitlesMenu);
@@ -615,6 +670,11 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 6,
   },
+  playerTitleCompact: {
+    ...Typography.bodySmall,
+    lineHeight: 18,
+    marginHorizontal: Spacing.sm,
+  },
   bottomGradient: {
     paddingTop: Spacing.xxxl,
   },
@@ -624,6 +684,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.xl,
     paddingTop: Spacing.xs,
+  },
+  bottomBarCompact: {
+    flexDirection: 'column',
+    paddingHorizontal: Spacing.md,
+    alignItems: 'stretch',
+    gap: Spacing.sm,
   },
   bottomLeftControls: {
     flexDirection: 'row',
@@ -635,7 +701,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.md,
   },
+  bottomControlsCompact: {
+    justifyContent: 'space-between',
+    gap: Spacing.sm,
+  },
   iconBtn: {
+    minWidth: 44,
+    minHeight: 44,
     padding: Spacing.xs,
     justifyContent: 'center',
     alignItems: 'center',
@@ -694,6 +766,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
   },
+  menuContainerCompact: {
+    left: Spacing.md,
+    right: Spacing.md,
+    bottom: 118,
+    width: undefined,
+    maxHeight: 260,
+  },
   menuTitle: {
     ...Typography.body,
     fontWeight: 'bold',
@@ -710,7 +789,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
     borderRadius: BorderRadius.md,
+    minHeight: 44,
+    gap: Spacing.sm,
   },
   menuItemActive: {
     backgroundColor: 'rgba(229, 9, 20, 0.15)',
@@ -719,8 +801,41 @@ const styles = StyleSheet.create({
     ...Typography.bodySmall,
     color: Colors.textPrimary,
   },
+  menuItemCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
   menuItemSubtext: {
     ...Typography.caption,
     color: Colors.textTertiary,
+  },
+  mobileStreamPill: {
+    alignSelf: 'center',
+    maxWidth: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.pill,
+    backgroundColor: 'rgba(20, 20, 32, 0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 200, 83, 0.24)',
+  },
+  mobileStreamText: {
+    ...Typography.caption,
+    color: Colors.textPrimary,
+    maxWidth: 220,
+  },
+  menuStatusBadge: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+  },
+  menuStatusBadgeText: {
+    ...Typography.caption,
+    fontWeight: '700',
+    textTransform: 'uppercase',
   },
 });

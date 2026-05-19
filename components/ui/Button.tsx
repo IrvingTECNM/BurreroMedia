@@ -12,7 +12,6 @@ import {
   ViewStyle,
   TextStyle,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { HapticPressable } from './HapticPressable';
 import { Colors, BorderRadius, Typography, Spacing } from '@/constants/theme';
 
@@ -69,40 +68,6 @@ export function Button({
   const vs = variantStyles[variant];
   const ss = sizeStyles[size];
 
-  if (variant === 'primary') {
-    return (
-      <HapticPressable
-        onPress={onPress}
-        disabled={isDisabled}
-        hapticType="medium"
-        style={[fullWidth && styles.fullWidth, style]}
-      >
-        <LinearGradient
-          colors={[Colors.primary, Colors.primaryDark]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[
-            styles.button,
-            ss.button,
-            isDisabled && styles.disabled,
-            fullWidth && styles.fullWidth,
-          ]}
-        >
-          {loading ? (
-            <ActivityIndicator size="small" color={Colors.textPrimary} />
-          ) : (
-            <>
-              {icon && <>{icon}</>}
-              <Text style={[styles.text, ss.text, { color: vs.text }, icon && styles.textWithIcon]}>
-                {title}
-              </Text>
-            </>
-          )}
-        </LinearGradient>
-      </HapticPressable>
-    );
-  }
-
   return (
     <HapticPressable
       onPress={onPress}
@@ -112,6 +77,7 @@ export function Button({
         styles.button,
         ss.button,
         { backgroundColor: vs.bg },
+        variant === 'primary' && styles.primaryButton,
         vs.border && { borderWidth: 1, borderColor: vs.border },
         isDisabled && styles.disabled,
         fullWidth && styles.fullWidth,
@@ -137,8 +103,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: BorderRadius.lg,
+    borderRadius: BorderRadius.md,
     overflow: 'hidden',
+  },
+  primaryButton: {
+    borderWidth: 1,
+    borderColor: Colors.primaryLight,
   },
   text: {
     textAlign: 'center',

@@ -15,11 +15,11 @@ interface BadgeProps {
 }
 
 const variantColors: Record<BadgeVariant, { bg: string; text: string }> = {
-  quality: { bg: 'rgba(229, 9, 20, 0.85)', text: Colors.textPrimary },
-  language: { bg: 'rgba(100, 181, 246, 0.2)', text: Colors.info },
-  status: { bg: 'rgba(129, 199, 132, 0.2)', text: Colors.success },
-  recommendation: { bg: 'rgba(255, 215, 0, 0.2)', text: Colors.accent },
-  rating: { bg: 'rgba(255, 215, 0, 0.15)', text: Colors.accent },
+  quality: { bg: 'rgba(229, 9, 20, 0.18)', text: Colors.primaryLight },
+  language: { bg: 'rgba(100, 181, 246, 0.14)', text: Colors.info },
+  status: { bg: 'rgba(129, 199, 132, 0.14)', text: Colors.success },
+  recommendation: { bg: 'rgba(255, 215, 0, 0.14)', text: Colors.accent },
+  rating: { bg: 'rgba(255, 215, 0, 0.12)', text: Colors.accent },
 };
 
 export function Badge({ text, variant = 'quality', color, style }: BadgeProps) {
@@ -40,6 +40,8 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.sm,
     alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   text: {
     ...Typography.caption,

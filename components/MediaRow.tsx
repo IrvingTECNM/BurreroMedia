@@ -34,14 +34,19 @@ export function MediaRow({
     <View style={styles.container}>
       {/* Section Header */}
       <View style={styles.header}>
-        {icon && <View style={styles.icon}>{icon}</View>}
-        <Text style={styles.title}>{title}</Text>
+        <View style={styles.titleGroup}>
+          {icon && <View style={styles.icon}>{icon}</View>}
+          <Text style={styles.title}>{title}</Text>
+        </View>
+        {!isLoading && data.length > 0 && (
+          <Text style={styles.count}>{data.length}</Text>
+        )}
       </View>
 
       {/* Content */}
       {isLoading ? (
         <View style={styles.skeletonRow}>
-          {[1, 2, 3, 4].map((i) => (
+          {[1, 2, 3, 4, 5].map((i) => (
             <MediaCardSkeleton key={i} />
           ))}
         </View>
@@ -73,8 +78,14 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: Spacing.lg,
     marginBottom: Spacing.md,
+  },
+  titleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
   },
   icon: {
     marginRight: Spacing.sm,
@@ -82,6 +93,10 @@ const styles = StyleSheet.create({
   title: {
     ...Typography.h3,
     color: Colors.textPrimary,
+  },
+  count: {
+    ...Typography.caption,
+    color: Colors.textTertiary,
   },
   listContent: {
     paddingHorizontal: Spacing.lg,

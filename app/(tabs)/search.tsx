@@ -85,6 +85,7 @@ export default function SearchScreen() {
   const isDesktop = Platform.OS === 'web' && width > 768;
   const contentMaxWidth = isDesktop ? 1200 : '100%';
   const alignSelf = isDesktop ? 'center' : 'auto';
+  const resultCount = data?.length || 0;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + (isDesktop ? 80 : 0) }]}>
@@ -144,13 +145,18 @@ export default function SearchScreen() {
       )}
 
       {/* Section Title */}
-      <Text style={styles.sectionTitle}>
-        {debouncedQuery.length >= 2
-          ? `Resultados para "${debouncedQuery}"`
-          : selectedGenre !== null
-          ? 'Explorar Género'
-          : 'Tendencias del Día'}
-      </Text>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>
+          {debouncedQuery.length >= 2
+            ? `Resultados para "${debouncedQuery}"`
+            : selectedGenre !== null
+            ? 'Explorar Género'
+            : 'Tendencias del Día'}
+        </Text>
+        {!isLoading && resultCount > 0 && (
+          <Text style={styles.resultCount}>{resultCount} títulos</Text>
+        )}
+      </View>
 
       {/* Results Grid */}
       {isLoading ? (
@@ -199,8 +205,10 @@ const styles = StyleSheet.create({
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: BorderRadius.lg,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
     paddingHorizontal: Spacing.md,
     height: 48,
     gap: Spacing.sm,
@@ -214,11 +222,22 @@ const styles = StyleSheet.create({
       web: { outlineStyle: 'none' } as any,
     }),
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
+    gap: Spacing.md,
+  },
   sectionTitle: {
     ...Typography.h3,
     color: Colors.textPrimary,
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.md,
+    flex: 1,
+  },
+  resultCount: {
+    ...Typography.caption,
+    color: Colors.textTertiary,
   },
   gridContent: {
     paddingHorizontal: Spacing.md,
@@ -264,12 +283,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.pill,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
     overflow: 'hidden',
   },
   genreTabActive: {
     color: Colors.textPrimary,
     backgroundColor: Colors.primary,
+    borderColor: Colors.primaryLight,
     fontWeight: 'bold',
   },
 });

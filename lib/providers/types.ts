@@ -25,6 +25,10 @@ export interface StreamResult {
   isDownload?: boolean;   // Whether this is a direct download link (Mega, 1fichier, etc.)
   size?: string;           // "2.1 GB"
   seeds?: number;          // For torrents
+  behaviorHints?: {
+    isDirect?: boolean;
+    notWebReady?: boolean;
+  };
 }
 
 export interface SubtitleResult {

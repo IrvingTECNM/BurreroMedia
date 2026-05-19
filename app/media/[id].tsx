@@ -57,6 +57,98 @@ import { ensureSupabaseSession, supabase } from '@/lib/supabase';
 
 // Cinematic ratio calculated dynamically in component
 
+const qualityOrder: Record<string, number> = {
+  '4K': 4,
+  '1080p': 3,
+  '720p': 2,
+  '480p': 1,
+  Unknown: 0,
+};
+
+const preferredServerOrder = [
+  'vimeos',
+  'goodstream',
+  'hlswish',
+  'streamwish',
+  'filelions',
+  'filemoon',
+  'streamtape',
+  'streamsb',
+  'doodstream',
+  'voe',
+];
+
+type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
+
+const serverProfiles: Record<string, { label: string; badge: string; color: string; score: number; icon: IoniconName }> = {
+  vimeos: { label: 'Vimeos', badge: 'Muy estable', color: Colors.success, score: 42, icon: 'flash' },
+  goodstream: { label: 'Goodstream', badge: 'Muy estable', color: Colors.success, score: 40, icon: 'flash' },
+  hlswish: { label: 'HLSWish', badge: 'HLS estable', color: Colors.success, score: 38, icon: 'radio' },
+  streamwish: { label: 'Streamwish', badge: 'HLS estable', color: Colors.success, score: 34, icon: 'radio' },
+  filelions: { label: 'Filelions', badge: 'Buena opcion', color: Colors.info, score: 28, icon: 'play-circle' },
+  filemoon: { label: 'Filemoon', badge: 'Buena opcion', color: Colors.info, score: 26, icon: 'play-circle' },
+  streamtape: { label: 'Streamtape', badge: 'Alternativo', color: Colors.warning, score: 18, icon: 'swap-horizontal' },
+  streamsb: { label: 'StreamSB', badge: 'Alternativo', color: Colors.warning, score: 16, icon: 'swap-horizontal' },
+  doodstream: { label: 'Doodstream', badge: 'Variable', color: Colors.warning, score: 10, icon: 'time' },
+  voe: { label: 'Voe', badge: 'Externo', color: Colors.textTertiary, score: 4, icon: 'open-outline' },
+};
+
+function getServerKey(stream: StreamResult): string | null {
+  const lower = `${stream.provider} ${stream.title} ${stream.url}`.toLowerCase();
+  return preferredServerOrder.find((name) => lower.includes(name)) || null;
+}
+
+function getServerProfile(stream: StreamResult) {
+  const key = getServerKey(stream);
+  return key ? serverProfiles[key] : null;
+}
+
+function getStreamScore(stream: StreamResult): number {
+  const hints = stream.behaviorHints;
+  const serverScore = getServerProfile(stream)?.score || 0;
+  const qualityScore = (qualityOrder[stream.quality] || 0) * 20;
+  const playableScore = stream.type === 'direct' ? 80 : stream.type === 'embed' ? 25 : 5;
+  const proxyScore = stream.url.includes('/api/proxy') ? 35 : 0;
+  const hlsScore = stream.url.includes('.m3u8') ? 20 : 0;
+  const languageScore = stream.language === 'es-lat' ? 18 : stream.language === 'es-es' ? 12 : stream.language === 'en-sub' ? 8 : 0;
+  const externalPenalty = hints && !hints.isDirect ? -45 : 0;
+  const downloadPenalty = stream.isDownload ? -100 : 0;
+
+  return qualityScore + playableScore + proxyScore + hlsScore + languageScore + serverScore + externalPenalty + downloadPenalty;
+}
+
+function sortStreamsForUser(streams: StreamResult[]): StreamResult[] {
+  const seen = new Set<string>();
+  const unique = streams.filter(s => {
+    if (!s.url) return true;
+    if (seen.has(s.url)) return false;
+    seen.add(s.url);
+    return true;
+  });
+  return [...unique].sort((a, b) => getStreamScore(b) - getStreamScore(a));
+}
+
+function getStreamRecommendation(stream: StreamResult, bestScore: number) {
+  const hints = stream.behaviorHints;
+  const score = getStreamScore(stream);
+  const profile = getServerProfile(stream);
+  if (stream.isDownload) return { label: 'Descarga', color: Colors.textTertiary };
+  if (hints && !hints.isDirect) return { label: 'Externo', color: Colors.warning };
+  if (score === bestScore) return { label: 'Recomendado', color: Colors.success };
+  if (profile && profile.color === Colors.success) return { label: profile.badge, color: profile.color };
+  if (stream.url.includes('/api/proxy') || stream.url.includes('.m3u8')) return { label: 'Alta calidad', color: Colors.info };
+  if (stream.type === 'direct') return { label: 'Directo', color: Colors.primaryLight };
+  return { label: 'Fallback', color: Colors.textTertiary };
+}
+
+function getStreamCapabilityLabel(stream: StreamResult) {
+  if (stream.isDownload) return 'Descarga';
+  if (stream.behaviorHints && !stream.behaviorHints.isDirect) return 'Abre fuera del player';
+  if (stream.url.includes('.m3u8')) return 'HLS, ideal para adelantar';
+  if (stream.url.includes('/api/proxy')) return 'Directo con proxy';
+  return stream.type === 'direct' ? 'Directo' : 'Alternativo';
+}
+
 export default function MediaDetailScreen() {
   const { id, type } = useLocalSearchParams<{ id: string; type: string }>();
   const router = useRouter();
@@ -120,14 +212,6 @@ export default function MediaDetailScreen() {
       // Reset only if we don't have cached data yet
       setLiveStreams(prev => prev.length > 0 ? [] : []);
       
-      const qualityOrder: Record<string, number> = {
-        '4K': 4,
-        '1080p': 3,
-        '720p': 2,
-        '480p': 1,
-        'Unknown': 0,
-      };
-
       // Call searchStreams with a progressive append callback
       const result = await providerManager.searchStreams(
         id || '', 
@@ -143,16 +227,7 @@ export default function MediaDetailScreen() {
             if (distinctNew.length === 0) return prev;
             
             const merged = [...prev, ...distinctNew];
-            // Sort: highest quality first, then direct playable, then Latino preference
-            const langOrder = (l: string) => l === 'es-lat' ? 0 : l === 'es-es' ? 1 : l === 'en-sub' ? 2 : 3;
-            merged.sort((a, b) => {
-              const qualDiff = (qualityOrder[b.quality] || 0) - (qualityOrder[a.quality] || 0);
-              if (qualDiff !== 0) return qualDiff;
-              if (a.type === 'direct' && b.type !== 'direct') return -1;
-              if (b.type === 'direct' && a.type !== 'direct') return 1;
-              return langOrder(a.language) - langOrder(b.language);
-            });
-            return merged;
+            return sortStreamsForUser(merged);
           });
         }
       );
@@ -166,7 +241,7 @@ export default function MediaDetailScreen() {
   // Hydrate liveStreams with cached data instantly when returning to the page
   React.useEffect(() => {
     if (cachedData?.streams && cachedData.streams.length > 0) {
-      setLiveStreams(cachedData.streams);
+      setLiveStreams(sortStreamsForUser(cachedData.streams));
     }
   }, [cachedData]);
 
@@ -190,6 +265,7 @@ export default function MediaDetailScreen() {
   const streamingLinks = liveStreams.filter(s => !s.isDownload);
   const downloadLinks = liveStreams.filter(s => s.isDownload);
   const currentStreams = activeTab === 'streaming' ? streamingLinks : downloadLinks;
+  const bestCurrentScore = currentStreams.length > 0 ? Math.max(...currentStreams.map(getStreamScore)) : 0;
 
   return (
     <View style={styles.container}>
@@ -297,6 +373,7 @@ export default function MediaDetailScreen() {
             }}
             variant="primary"
             size="lg"
+            disabled={streamingLinks.length === 0}
             icon={<Ionicons name="play" size={20} color={Colors.textPrimary} />}
             style={{ flex: 1 }}
           />
@@ -425,9 +502,25 @@ export default function MediaDetailScreen() {
         <Text style={styles.sectionTitle}>
           Fuentes {mediaType === 'tv' ? `(T${selectedSeason} E${selectedEpisode})` : 'Disponibles'}
         </Text>
+        {liveStreams.length > 0 && (
+          <Text style={styles.sectionMeta}>
+            {streamingLinks.length} streaming · {downloadLinks.length} descarga{downloadLinks.length === 1 ? '' : 's'}
+          </Text>
+        )}
         
         {liveStreams.length === 0 && streamsLoading ? (
-          <ActivityIndicator color={Colors.primary} style={{ marginVertical: Spacing.lg }} />
+          <View style={styles.streamsList}>
+            <Text style={styles.searchingText}>Buscando servidores estables...</Text>
+            {[0, 1, 2].map((item) => (
+              <View key={`stream-skeleton-${item}`} style={styles.streamSkeleton}>
+                <View style={styles.streamSkeletonIcon} />
+                <View style={styles.streamSkeletonCopy}>
+                  <View style={styles.streamSkeletonLineWide} />
+                  <View style={styles.streamSkeletonLine} />
+                </View>
+              </View>
+            ))}
+          </View>
         ) : liveStreams.length > 0 ? (
           <View style={styles.streamsList}>
             <View style={styles.tabContainer}>
@@ -442,7 +535,12 @@ export default function MediaDetailScreen() {
               
               <HapticPressable 
                 onPress={() => setActiveTab('downloads')}
-                style={[styles.tab, activeTab === 'downloads' && styles.activeTab]}
+                disabled={downloadLinks.length === 0}
+                style={[
+                  styles.tab,
+                  activeTab === 'downloads' && styles.activeTab,
+                  downloadLinks.length === 0 && styles.tabDisabled,
+                ]}
               >
                 <Text style={[styles.tabText, activeTab === 'downloads' && styles.activeTabText]}>
                   Descargas ({downloadLinks.length})
@@ -485,6 +583,7 @@ export default function MediaDetailScreen() {
               <StreamItem
                 key={index}
                 stream={stream}
+                bestScore={bestCurrentScore}
                 onDownload={handleDownload}
                 onPress={() => {
                   if (stream.isDownload) {
@@ -534,7 +633,7 @@ export default function MediaDetailScreen() {
             {streamsLoading && (
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: Spacing.md, gap: Spacing.sm }}>
                 <ActivityIndicator size="small" color={Colors.primary} />
-                <Text style={{ color: Colors.textTertiary, fontSize: 12 }}>Buscando más fuentes...</Text>
+                <Text style={styles.searchingText}>Buscando más fuentes...</Text>
               </View>
             )}
             
@@ -560,23 +659,13 @@ export default function MediaDetailScreen() {
                     alert('Error enviando petición VIP: ' + e.message);
                   }
                 }}
-                style={{
-                  backgroundColor: '#ff434315',
-                  padding: Spacing.md,
-                  borderRadius: 12,
-                  marginTop: Spacing.xl,
-                  borderWidth: 1,
-                  borderColor: '#ff434350',
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: Spacing.sm
-                }}
+                style={styles.betterSourceButton}
               >
-                <Ionicons name="server" size={20} color="#ff4343" />
-                <Text style={{ color: '#ff4343', fontWeight: 'bold' }}>
-                  ¿Lento o sin links? Solicitar Caché VIP en Seedbox
-                </Text>
+                <Ionicons name="server" size={20} color={Colors.primaryLight} />
+                <View style={styles.betterSourceCopy}>
+                  <Text style={styles.betterSourceTitle}>Pedir mejor fuente</Text>
+                  <Text style={styles.betterSourceText}>Buscamos una version mas estable o de mayor calidad.</Text>
+                </View>
               </HapticPressable>
             )}
           </View>
@@ -608,23 +697,13 @@ export default function MediaDetailScreen() {
                     alert('Error enviando petición VIP: ' + e.message);
                   }
                 }}
-                style={{
-                  backgroundColor: '#ff434315',
-                  padding: Spacing.md,
-                  borderRadius: 12,
-                  marginTop: Spacing.xl,
-                  borderWidth: 1,
-                  borderColor: '#ff434350',
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: Spacing.sm
-                }}
+                style={styles.betterSourceButton}
               >
-                <Ionicons name="server" size={20} color="#ff4343" />
-                <Text style={{ color: '#ff4343', fontWeight: 'bold', textAlign: 'center' }}>
-                  Solicitar búsqueda y descarga VIP
-                </Text>
+                <Ionicons name="server" size={20} color={Colors.primaryLight} />
+                <View style={styles.betterSourceCopy}>
+                  <Text style={styles.betterSourceTitle}>Pedir mejor fuente</Text>
+                  <Text style={styles.betterSourceText}>Buscamos una version estable para este titulo.</Text>
+                </View>
             </HapticPressable>
           </View>
         )}
@@ -656,7 +735,7 @@ export default function MediaDetailScreen() {
 }
 
 /** Individual stream source item */
-function StreamItem({ stream, onPress, onDownload }: { stream: StreamResult; onPress: () => void; onDownload?: () => void }) {
+function StreamItem({ stream, bestScore, onPress, onDownload }: { stream: StreamResult; bestScore: number; onPress: () => void; onDownload?: () => void }) {
   const qualityColor: Record<string, string> = {
     '4K': '#FFD700',
     '1080p': '#4FC3F7',
@@ -667,29 +746,60 @@ function StreamItem({ stream, onPress, onDownload }: { stream: StreamResult; onP
 
   const isIndirect = stream.behaviorHints && !stream.behaviorHints.isDirect;
   const canDownload = !isIndirect && !stream.isDownload && onDownload;
+  const recommendation = getStreamRecommendation(stream, bestScore);
+  const serverProfile = getServerProfile(stream);
+  const isPreferred = !isIndirect && !stream.isDownload && serverProfile?.color === Colors.success;
+  const serverName = serverProfile?.label || stream.provider;
+  const serverMeta = [
+    stream.quality,
+    stream.language,
+    stream.size,
+    stream.url.includes('/api/proxy') ? 'Proxy' : null,
+    stream.url.includes('.m3u8') ? 'HLS' : null,
+  ].filter(Boolean).join(' · ');
+
+  const capability = getStreamCapabilityLabel(stream);
 
   return (
-    <View style={[styles.streamItem, isIndirect && { opacity: 0.75 }]}>
-      <HapticPressable onPress={onPress} style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
-        <View style={[styles.streamIcon, isIndirect && { backgroundColor: Colors.surfaceLight }]}>
+    <View style={[
+      styles.streamItem,
+      isPreferred && styles.streamItemPreferred,
+      recommendation.label === 'Recomendado' && styles.streamItemRecommended,
+      isIndirect && { opacity: 0.75 },
+    ]}>
+      <HapticPressable onPress={onPress} style={styles.streamPressable}>
+        <View style={[
+          styles.streamIcon,
+          isPreferred && { backgroundColor: 'rgba(0, 200, 83, 0.14)' },
+          isIndirect && { backgroundColor: Colors.surfaceLight },
+        ]}>
           <Ionicons
-            name={isIndirect ? 'open-outline' : stream.isDownload ? 'download-outline' : (stream.type === 'torrent' ? 'magnet-outline' : 'play-circle-outline')}
+            name={isIndirect ? 'open-outline' : stream.isDownload ? 'download-outline' : serverProfile?.icon || (stream.type === 'torrent' ? 'magnet-outline' : 'play-circle-outline')}
             size={24}
-            color={isIndirect ? Colors.textTertiary : Colors.primary}
+            color={isIndirect ? Colors.textTertiary : serverProfile?.color || Colors.primary}
           />
         </View>
-        <View style={[styles.streamInfo, { flex: 1 }]}>
-          <Text style={[styles.streamTitle, isIndirect && { color: Colors.textSecondary }]}>
-            {stream.title} {isIndirect && '(Externo)'}
+        <View style={styles.streamInfo}>
+          <Text style={[styles.streamTitle, isIndirect && { color: Colors.textSecondary }]} numberOfLines={2}>
+            {serverName}{isIndirect ? ' (Externo)' : ''}
           </Text>
-          <Text style={styles.streamMeta}>
+          <Text style={styles.streamMeta} numberOfLines={2}>
             {stream.provider} {stream.size ? `· ${stream.size}` : ''}
           </Text>
+          <Text style={styles.streamCapability} numberOfLines={1}>
+            {capability}
+          </Text>
         </View>
-        <Badge
-          text={stream.quality}
-          color={isIndirect ? Colors.textTertiary : qualityColor[stream.quality]}
-        />
+        <View style={styles.streamBadges}>
+          <Badge
+            text={recommendation.label}
+            color={recommendation.color}
+          />
+          <Badge
+            text={stream.quality}
+            color={isIndirect ? Colors.textTertiary : qualityColor[stream.quality]}
+          />
+        </View>
       </HapticPressable>
       
       {canDownload && (
@@ -791,6 +901,11 @@ const styles = StyleSheet.create({
   sectionTitle: {
     ...Typography.h3,
     color: Colors.textPrimary,
+    marginBottom: Spacing.xs,
+  },
+  sectionMeta: {
+    ...Typography.caption,
+    color: Colors.textTertiary,
     marginBottom: Spacing.md,
   },
   castRow: {
@@ -832,10 +947,12 @@ const styles = StyleSheet.create({
   },
   tabContainer: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: Colors.surfaceMuted,
     borderRadius: BorderRadius.md,
     padding: 4,
     marginBottom: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   tab: {
     flex: 1,
@@ -846,13 +963,16 @@ const styles = StyleSheet.create({
   activeTab: {
     backgroundColor: Colors.primary,
   },
+  tabDisabled: {
+    opacity: 0.45,
+  },
   tabText: {
     ...Typography.bodySmall,
     color: Colors.textSecondary,
     fontWeight: '600',
   },
   activeTabText: {
-    color: '#000',
+    color: Colors.textPrimary,
   },
   emptyTab: {
     alignItems: 'center',
@@ -869,9 +989,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.lg,
+    borderRadius: BorderRadius.md,
     padding: Spacing.md,
     gap: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    minWidth: 0,
+  },
+  streamItemRecommended: {
+    borderColor: 'rgba(0, 200, 83, 0.45)',
+    backgroundColor: 'rgba(0, 200, 83, 0.08)',
+  },
+  streamItemPreferred: {
+    borderColor: 'rgba(0, 200, 83, 0.28)',
+    backgroundColor: 'rgba(0, 200, 83, 0.05)',
+  },
+  streamPressable: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    minWidth: 0,
   },
   streamIcon: {
     width: 44,
@@ -883,6 +1020,7 @@ const styles = StyleSheet.create({
   },
   streamInfo: {
     flex: 1,
+    minWidth: 0,
   },
   streamTitle: {
     ...Typography.body,
@@ -894,15 +1032,93 @@ const styles = StyleSheet.create({
     color: Colors.textTertiary,
     marginTop: 2,
   },
+  streamCapability: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  streamBadges: {
+    alignItems: 'flex-end',
+    gap: Spacing.xs,
+    marginLeft: Spacing.sm,
+    flexShrink: 0,
+  },
   noStreams: {
     alignItems: 'center',
     paddingVertical: Spacing.xxl,
+    paddingHorizontal: Spacing.lg,
+    backgroundColor: Colors.surfaceMuted,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
     gap: Spacing.md,
   },
   noStreamsText: {
     ...Typography.bodySmall,
     color: Colors.textTertiary,
     textAlign: 'center',
+  },
+  searchingText: {
+    ...Typography.caption,
+    color: Colors.textTertiary,
+    textAlign: 'center',
+  },
+  streamSkeleton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  streamSkeletonIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.surfaceElevated,
+  },
+  streamSkeletonCopy: {
+    flex: 1,
+    gap: Spacing.sm,
+  },
+  streamSkeletonLineWide: {
+    width: '70%',
+    height: 12,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: Colors.surfaceElevated,
+  },
+  streamSkeletonLine: {
+    width: '45%',
+    height: 10,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: Colors.surfaceLight,
+  },
+  betterSourceButton: {
+    marginTop: Spacing.xl,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 61, 71, 0.28)',
+    backgroundColor: 'rgba(255, 61, 71, 0.08)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+  },
+  betterSourceCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  betterSourceTitle: {
+    ...Typography.bodySmall,
+    color: Colors.textPrimary,
+    fontWeight: '700',
+  },
+  betterSourceText: {
+    ...Typography.caption,
+    color: Colors.textTertiary,
+    marginTop: 2,
   },
   seasonTab: {
     paddingHorizontal: Spacing.md,

@@ -20,6 +20,7 @@ export const Colors = {
   surface: '#141420',
   surfaceLight: '#1C1C2E',
   surfaceElevated: '#242438',
+  surfaceMuted: '#101019',
 
   // Text
   textPrimary: '#FFFFFF',
@@ -41,6 +42,7 @@ export const Colors = {
   // Border / Divider
   border: 'rgba(255, 255, 255, 0.08)',
   borderLight: 'rgba(255, 255, 255, 0.12)',
+  borderStrong: 'rgba(255, 255, 255, 0.18)',
   divider: 'rgba(255, 255, 255, 0.06)',
 
   // Status
@@ -78,7 +80,7 @@ export const Spacing = {
 export const BorderRadius = {
   sm: 4,
   md: 8,
-  lg: 12,
+  lg: 10,
   xl: 16,
   xxl: 24,
   pill: 999,
@@ -99,19 +101,19 @@ export const Typography = {
     fontSize: 36,
     lineHeight: 44,
     fontWeight: '800' as const,
-    letterSpacing: -0.5,
+    letterSpacing: 0,
   },
   h1: {
     fontSize: 28,
     lineHeight: 36,
     fontWeight: '700' as const,
-    letterSpacing: -0.3,
+    letterSpacing: 0,
   },
   h2: {
     fontSize: 22,
     lineHeight: 28,
     fontWeight: '700' as const,
-    letterSpacing: -0.2,
+    letterSpacing: 0,
   },
   h3: {
     fontSize: 18,

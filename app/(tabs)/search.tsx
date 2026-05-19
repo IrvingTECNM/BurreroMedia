@@ -121,27 +121,28 @@ export default function SearchScreen() {
 
       {/* Genres */}
       {debouncedQuery.length < 2 && genres.data && (
-        <View style={styles.genresContainer}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={{ flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg }}>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          style={styles.genresContainer}
+          contentContainerStyle={{ flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg }}
+        >
+            <Text 
+              style={[styles.genreTab, selectedGenre === null && styles.genreTabActive]}
+              onPress={() => setSelectedGenre(null)}
+            >
+              Todas
+            </Text>
+            {genres.data.map(genre => (
               <Text 
-                style={[styles.genreTab, selectedGenre === null && styles.genreTabActive]}
-                onPress={() => setSelectedGenre(null)}
+                key={genre.id}
+                style={[styles.genreTab, selectedGenre === genre.id && styles.genreTabActive]}
+                onPress={() => setSelectedGenre(genre.id)}
               >
-                Todas
+                {genre.name}
               </Text>
-              {genres.data.map(genre => (
-                <Text 
-                  key={genre.id}
-                  style={[styles.genreTab, selectedGenre === genre.id && styles.genreTabActive]}
-                  onPress={() => setSelectedGenre(genre.id)}
-                >
-                  {genre.name}
-                </Text>
-              ))}
-            </View>
-          </ScrollView>
-        </View>
+            ))}
+        </ScrollView>
       )}
 
       {/* Section Title */}
@@ -276,8 +277,9 @@ const styles = StyleSheet.create({
   },
   genresContainer: {
     marginBottom: Spacing.md,
+    flexGrow: 0,
     ...Platform.select({
-      web: { overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' } as any,
+      web: { scrollbarWidth: 'none', msOverflowStyle: 'none' } as any,
     }),
   },
   genreTab: {

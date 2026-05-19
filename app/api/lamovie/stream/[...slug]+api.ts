@@ -146,8 +146,11 @@ async function searchLaMovie(
  *
  * La.Movie's search API does NOT handle complex queries like
  * "Euphoria temporada 1 episodio 1" — it returns empty.
- * Instead we search "Euphoria" with postType=episodes and postsPerPage=50,
- * then iterate through all returned episodes to find S{season}E{episode}.
+ * Instead we search "Euphoria" with postType=episodes, then iterate
+ * through all returned episodes to find S{season}E{episode}.
+ *
+ * IMPORTANT: La.Movie caps results at ~30 per page regardless of
+ * postsPerPage. We must use `pagination.last_page` to iterate all pages.
  *
  * La.Movie titles episodes as "{Show}: Temporada {S} Episodio {E}"
  */
@@ -163,70 +166,62 @@ async function searchLaMovieEpisode(
     const cleanTerm = term.replace(/[&:!?()]/g, ' ').replace(/\s+/g, ' ').trim();
     if (cleanTerm.length < 2) continue;
 
-    // Search with just the show name to get all episodes
-    const apiUrl = `${LAMOVIE_BASE}/wp-api/v1/search?q=${encodeURIComponent(cleanTerm)}&page=1&postType=episodes&postsPerPage=50`;
     console.log(`[la.movie API] Episode search: "${cleanTerm}" (looking for S${season}E${episode})`);
 
-    const jsonStr = curlFetch(apiUrl);
-    if (!jsonStr || !jsonStr.trim().startsWith('{')) continue;
-
-    try {
-      const data = JSON.parse(jsonStr);
-      if (data.error || !data.data?.posts) continue;
-
-      const posts: LaMoviePost[] = data.data.posts;
-      if (posts.length === 0) continue;
-
-      console.log(`[la.movie API] Got ${posts.length} episodes for "${cleanTerm}"`);
-
-      // Filter for the exact season and episode
+    // Helper to find the episode in a list of posts
+    const findEpisode = (posts: LaMoviePost[]): LaMoviePost | null => {
       for (const post of posts) {
         if (post.type !== 'episodes') continue;
-
         const titleLower = post.title.toLowerCase();
         const seasonMatch = titleLower.match(/temporada\s+(\d+)/);
         const episodeMatch = titleLower.match(/episodio\s+(\d+)/);
-
         if (seasonMatch && episodeMatch) {
           const foundSeason = parseInt(seasonMatch[1], 10);
           const foundEpisode = parseInt(episodeMatch[1], 10);
           if (foundSeason === season && foundEpisode === episode) {
-            console.log(`[la.movie API] ✅ Episode match: "${post.title}" (id=${post._id})`);
             return post;
           }
         }
       }
+      return null;
+    };
 
-      console.log(`[la.movie API] ⚠️ S${season}E${episode} not found among ${posts.length} episodes for "${cleanTerm}"`);
+    // Paginate through all pages (La.Movie caps at ~30 per page)
+    const MAX_PAGES = 5; // Safety limit
+    let lastPage = 1;
 
-      // If we have >45 results and didn't find it, try page 2
-      if (posts.length >= 45) {
-        const page2Url = `${LAMOVIE_BASE}/wp-api/v1/search?q=${encodeURIComponent(cleanTerm)}&page=2&postType=episodes&postsPerPage=50`;
-        console.log(`[la.movie API] Checking page 2...`);
-        const page2Str = curlFetch(page2Url);
-        if (page2Str && page2Str.trim().startsWith('{')) {
-          const page2Data = JSON.parse(page2Str);
-          if (!page2Data.error && page2Data.data?.posts) {
-            for (const post of page2Data.data.posts as LaMoviePost[]) {
-              if (post.type !== 'episodes') continue;
-              const titleLower = post.title.toLowerCase();
-              const seasonMatch = titleLower.match(/temporada\s+(\d+)/);
-              const episodeMatch = titleLower.match(/episodio\s+(\d+)/);
-              if (seasonMatch && episodeMatch) {
-                const foundSeason = parseInt(seasonMatch[1], 10);
-                const foundEpisode = parseInt(episodeMatch[1], 10);
-                if (foundSeason === season && foundEpisode === episode) {
-                  console.log(`[la.movie API] ✅ Episode match (page 2): "${post.title}" (id=${post._id})`);
-                  return post;
-                }
-              }
-            }
-          }
+    for (let page = 1; page <= Math.min(lastPage, MAX_PAGES); page++) {
+      const apiUrl = `${LAMOVIE_BASE}/wp-api/v1/search?q=${encodeURIComponent(cleanTerm)}&page=${page}&postType=episodes&postsPerPage=50`;
+
+      const jsonStr = curlFetch(apiUrl);
+      if (!jsonStr || !jsonStr.trim().startsWith('{')) break;
+
+      try {
+        const data = JSON.parse(jsonStr);
+        if (data.error || !data.data?.posts) break;
+
+        const posts: LaMoviePost[] = data.data.posts;
+        if (posts.length === 0) break;
+
+        // Update pagination info from the API response
+        if (data.data.pagination?.last_page) {
+          lastPage = data.data.pagination.last_page;
         }
+
+        console.log(`[la.movie API] Page ${page}/${lastPage}: ${posts.length} episodes`);
+
+        const found = findEpisode(posts);
+        if (found) {
+          console.log(`[la.movie API] ✅ Episode match: "${found.title}" (id=${found._id}, page ${page})`);
+          return found;
+        }
+      } catch (e) {
+        console.error('[la.movie API] Episode search parse error:', e);
+        break;
       }
-    } catch (e) {
-      console.error('[la.movie API] Episode search parse error:', e);
     }
+
+    console.log(`[la.movie API] ⚠️ S${season}E${episode} not found for "${cleanTerm}" across ${Math.min(lastPage, MAX_PAGES)} pages`);
   }
 
   return null;

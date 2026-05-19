@@ -180,7 +180,24 @@ export default function PlayerScreen() {
   }, [isPlaying, duration]);
 
   const handlePlaybackStatusUpdate = (status: AVPlaybackStatus) => {
-    if (!status.isLoaded) return;
+    if (!status.isLoaded) {
+      // When isLoaded is false and error is set, expo-av is reporting a load/playback error
+      if ('error' in status && status.error) {
+        console.log('[Player] Playback status error:', status.error);
+        setErrorCount(prev => {
+          const next = prev + 1;
+          // Only trigger error UI after 3 consecutive errors (tolerate transient issues)
+          if (next >= 3) {
+            handleError(status.error || 'Error de carga');
+          }
+          return next;
+        });
+      }
+      return;
+    }
+    // Stream loaded successfully — reset error count
+    if (errorCount > 0) setErrorCount(0);
+    if (playerError) setPlayerError(null);
     setIsPlaying(status.isPlaying);
     setIsLoading(status.isBuffering);
     setPosition(status.positionMillis || 0);
@@ -201,16 +218,9 @@ export default function PlayerScreen() {
     console.log('[Player] Error playing stream:', error);
     const failedServer = currentStream?.provider || currentStream?.title || 'Servidor';
     if (activeStreams.length > 0 && currentStreamIndex < activeStreams.length - 1) {
-      // There are more streams to try — show error with auto-switch option
-      setPlayerError(`"${failedServer}" falló. Cambiando al siguiente servidor...`);
+      // There are more streams available — show error with manual switch buttons (no auto-switch)
+      setPlayerError(`"${failedServer}" no pudo reproducir. Prueba otro servidor.`);
       setIsLoading(false);
-      // Auto-switch after 2 seconds
-      setTimeout(() => {
-        setCurrentStreamIndex(prev => prev + 1);
-        setPlayerError(null);
-        setErrorCount(0);
-        setIsLoading(true);
-      }, 2000);
     } else {
       // No more streams
       setPlayerError(`"${failedServer}" falló y no hay más servidores disponibles. Prueba con otra fuente.`);

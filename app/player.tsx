@@ -71,6 +71,7 @@ export default function PlayerScreen() {
   const [isProgressBarHovered, setIsProgressBarHovered] = useState(false);
   const [progressBarWidth, setProgressBarWidth] = useState(0);
   const [errorCount, setErrorCount] = useState(0);
+  const [playerError, setPlayerError] = useState<string | null>(null);
 
   // The actual URL being played
   const currentUrl = activeStreams.length > 0 
@@ -198,12 +199,22 @@ export default function PlayerScreen() {
 
   const handleError = (error: string) => {
     console.log('[Player] Error playing stream:', error);
+    const failedServer = currentStream?.provider || currentStream?.title || 'Servidor';
     if (activeStreams.length > 0 && currentStreamIndex < activeStreams.length - 1) {
-      console.log('[Player] Falling back to next stream...');
-      setCurrentStreamIndex(prev => prev + 1);
-      setErrorCount(0); // Reset error count for the new stream
+      // There are more streams to try — show error with auto-switch option
+      setPlayerError(`"${failedServer}" falló. Cambiando al siguiente servidor...`);
+      setIsLoading(false);
+      // Auto-switch after 2 seconds
+      setTimeout(() => {
+        setCurrentStreamIndex(prev => prev + 1);
+        setPlayerError(null);
+        setErrorCount(0);
+        setIsLoading(true);
+      }, 2000);
     } else {
-      console.log('[Player] No more fallback streams available.');
+      // No more streams
+      setPlayerError(`"${failedServer}" falló y no hay más servidores disponibles. Prueba con otra fuente.`);
+      setIsLoading(false);
     }
   };
 
@@ -357,6 +368,48 @@ export default function PlayerScreen() {
                 Cargando servidor alternativo...
               </Text>
             )}
+          </View>
+        )}
+
+        {/* Error Overlay */}
+        {playerError && (
+          <View style={styles.errorOverlay}>
+            <Ionicons name="alert-circle" size={48} color="#FF6B6B" />
+            <Text style={styles.errorTitle}>Error de reproducción</Text>
+            <Text style={styles.errorMessage}>{playerError}</Text>
+            <View style={{ flexDirection: 'row', gap: Spacing.md, marginTop: Spacing.lg }}>
+              {currentStreamIndex < activeStreams.length - 1 && (
+                <Pressable
+                  style={styles.errorButton}
+                  onPress={() => {
+                    setCurrentStreamIndex(prev => prev + 1);
+                    setPlayerError(null);
+                    setErrorCount(0);
+                    setIsLoading(true);
+                  }}
+                >
+                  <Ionicons name="swap-horizontal" size={18} color="white" />
+                  <Text style={styles.errorButtonText}>Probar otro servidor</Text>
+                </Pressable>
+              )}
+              <Pressable
+                style={[styles.errorButton, { backgroundColor: Colors.surface }]}
+                onPress={() => {
+                  setShowSettingsMenu(true);
+                  setPlayerError(null);
+                }}
+              >
+                <Ionicons name="list" size={18} color="white" />
+                <Text style={styles.errorButtonText}>Ver servidores</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.errorButton, { backgroundColor: '#444' }]}
+                onPress={() => router.back()}
+              >
+                <Ionicons name="arrow-back" size={18} color="white" />
+                <Text style={styles.errorButtonText}>Volver</Text>
+              </Pressable>
+            </View>
           </View>
         )}
 
@@ -645,6 +698,40 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.4)',
     zIndex: 2,
+  },
+  errorOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    zIndex: 10,
+    paddingHorizontal: Spacing.xxl,
+  },
+  errorTitle: {
+    ...Typography.h3,
+    color: '#FF6B6B',
+    marginTop: Spacing.md,
+    marginBottom: Spacing.sm,
+  },
+  errorMessage: {
+    ...Typography.body,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    maxWidth: 500,
+  },
+  errorButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.primary,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm + 2,
+    borderRadius: BorderRadius.md,
+  },
+  errorButtonText: {
+    ...Typography.bodySmall,
+    color: 'white',
+    fontWeight: '600',
   },
   controlsOverlay: {
     ...StyleSheet.absoluteFillObject,

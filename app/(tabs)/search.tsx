@@ -276,6 +276,9 @@ const styles = StyleSheet.create({
   },
   genresContainer: {
     marginBottom: Spacing.md,
+    ...Platform.select({
+      web: { overflowX: 'auto', overflowY: 'hidden', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' } as any,
+    }),
   },
   genreTab: {
     ...Typography.bodySmall,
@@ -286,7 +289,10 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     borderWidth: 1,
     borderColor: Colors.border,
-    overflow: 'hidden',
+    whiteSpace: 'nowrap',
+    ...Platform.select({
+      web: { cursor: 'pointer', userSelect: 'none' } as any,
+    }),
   },
   genreTabActive: {
     color: Colors.textPrimary,

@@ -16,6 +16,7 @@ import {
   useWindowDimensions,
   Keyboard,
   ScrollView,
+  Pressable,
 } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
@@ -87,108 +88,110 @@ export default function SearchScreen() {
   const alignSelf = isDesktop ? 'center' : 'auto';
   const resultCount = data?.length || 0;
 
+  // Build all genre items (including "Todas")
+  const allGenres = genres.data 
+    ? [{ id: null as number | null, name: 'Todas' }, ...genres.data.map(g => ({ id: g.id as number | null, name: g.name }))]
+    : [];
+
   return (
     <View style={[styles.container, { paddingTop: insets.top + (isDesktop ? 80 : 0) }]}>
       <View style={{ maxWidth: contentMaxWidth, width: '100%', alignSelf: alignSelf as any, flex: 1 }}>
         {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <View style={styles.searchBar}>
-          <Ionicons name="search" size={20} color={Colors.textTertiary} />
-          <TextInput
-            style={styles.input}
-            placeholder="Buscar películas, series..."
-            placeholderTextColor={Colors.textTertiary}
-            value={query}
-            onChangeText={handleSearch}
-            returnKeyType="search"
-            onSubmitEditing={() => Keyboard.dismiss()}
-            autoCorrect={false}
-          />
-          {query.length > 0 && (
-            <Ionicons
-              name="close-circle"
-              size={20}
-              color={Colors.textTertiary}
-              onPress={() => {
-                setQuery('');
-                setDebouncedQuery('');
-              }}
-              style={{ cursor: Platform.OS === 'web' ? 'pointer' : 'default' } as any}
+        <View style={styles.searchContainer}>
+          <View style={styles.searchBar}>
+            <Ionicons name="search" size={20} color={Colors.textTertiary} />
+            <TextInput
+              style={styles.input}
+              placeholder="Buscar películas, series..."
+              placeholderTextColor={Colors.textTertiary}
+              value={query}
+              onChangeText={handleSearch}
+              returnKeyType="search"
+              onSubmitEditing={() => Keyboard.dismiss()}
+              autoCorrect={false}
             />
+            {query.length > 0 && (
+              <Ionicons
+                name="close-circle"
+                size={20}
+                color={Colors.textTertiary}
+                onPress={() => {
+                  setQuery('');
+                  setDebouncedQuery('');
+                }}
+                style={{ cursor: Platform.OS === 'web' ? 'pointer' : 'default' } as any}
+              />
+            )}
+          </View>
+        </View>
+
+        {/* Genre Chips — horizontally scrollable */}
+        {debouncedQuery.length < 2 && allGenres.length > 0 && (
+          <View style={styles.genreTrack}>
+            {allGenres.map((genre) => {
+              const isActive = selectedGenre === genre.id;
+              return (
+                <Pressable
+                  key={genre.id ?? 'all'}
+                  style={[
+                    styles.genreChip,
+                    isActive && styles.genreChipActive,
+                  ]}
+                  onPress={() => setSelectedGenre(genre.id)}
+                >
+                  <Text style={[styles.genreChipText, isActive && styles.genreChipTextActive]}>
+                    {genre.name}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+
+        {/* Section Title */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>
+            {debouncedQuery.length >= 2
+              ? `Resultados para "${debouncedQuery}"`
+              : selectedGenre !== null
+              ? 'Explorar Género'
+              : 'Tendencias del Día'}
+          </Text>
+          {!isLoading && resultCount > 0 && (
+            <Text style={styles.resultCount}>{resultCount} títulos</Text>
           )}
         </View>
-      </View>
 
-      {/* Genres */}
-      {debouncedQuery.length < 2 && genres.data && (
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          style={styles.genresContainer}
-          contentContainerStyle={{ flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg }}
-        >
-            <Text 
-              style={[styles.genreTab, selectedGenre === null && styles.genreTabActive]}
-              onPress={() => setSelectedGenre(null)}
-            >
-              Todas
+        {/* Results Grid */}
+        {isLoading ? (
+          <ScrollView contentContainerStyle={styles.gridContent} showsVerticalScrollIndicator={false} scrollEnabled={false}>
+            <View style={styles.gridRow}>
+              {Array.from({ length: 12 }).map((_, i) => (
+                <View key={`skeleton-${i}`} style={styles.gridItem}>
+                  <SkeletonMediaCard size="lg" />
+                </View>
+              ))}
+            </View>
+          </ScrollView>
+        ) : data && data.length > 0 ? (
+          <ScrollView contentContainerStyle={styles.gridContent} showsVerticalScrollIndicator={false}>
+            <View style={styles.gridRow}>
+              {data.map((item) => (
+                <View key={item.id} style={styles.gridItem}>
+                  <MediaCard item={item} size="lg" />
+                </View>
+              ))}
+            </View>
+          </ScrollView>
+        ) : debouncedQuery.length >= 2 ? (
+          <View style={styles.emptyContainer}>
+            <Ionicons name="search-outline" size={64} color={Colors.textTertiary} />
+            <Text style={styles.emptyTitle}>Sin resultados</Text>
+            <Text style={styles.emptySubtitle}>
+              Intenta con otro nombre o busca por género
             </Text>
-            {genres.data.map(genre => (
-              <Text 
-                key={genre.id}
-                style={[styles.genreTab, selectedGenre === genre.id && styles.genreTabActive]}
-                onPress={() => setSelectedGenre(genre.id)}
-              >
-                {genre.name}
-              </Text>
-            ))}
-        </ScrollView>
-      )}
-
-      {/* Section Title */}
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>
-          {debouncedQuery.length >= 2
-            ? `Resultados para "${debouncedQuery}"`
-            : selectedGenre !== null
-            ? 'Explorar Género'
-            : 'Tendencias del Día'}
-        </Text>
-        {!isLoading && resultCount > 0 && (
-          <Text style={styles.resultCount}>{resultCount} títulos</Text>
-        )}
-      </View>
-
-      {/* Results Grid */}
-      {isLoading ? (
-        <ScrollView contentContainerStyle={styles.gridContent} showsVerticalScrollIndicator={false} scrollEnabled={false}>
-          <View style={styles.gridRow}>
-            {Array.from({ length: 12 }).map((_, i) => (
-              <View key={`skeleton-${i}`} style={styles.gridItem}>
-                <SkeletonMediaCard size="lg" />
-              </View>
-            ))}
           </View>
-        </ScrollView>
-      ) : data && data.length > 0 ? (
-        <ScrollView contentContainerStyle={styles.gridContent} showsVerticalScrollIndicator={false}>
-          <View style={styles.gridRow}>
-            {data.map((item) => (
-              <View key={item.id} style={styles.gridItem}>
-                <MediaCard item={item} size="lg" />
-              </View>
-            ))}
-          </View>
-        </ScrollView>
-      ) : debouncedQuery.length >= 2 ? (
-        <View style={styles.emptyContainer}>
-          <Ionicons name="search-outline" size={64} color={Colors.textTertiary} />
-          <Text style={styles.emptyTitle}>Sin resultados</Text>
-          <Text style={styles.emptySubtitle}>
-            Intenta con otro nombre o busca por género
-          </Text>
-        </View>
-      ) : null}
+        ) : null}
       </View>
     </View>
   );
@@ -223,6 +226,56 @@ const styles = StyleSheet.create({
       web: { outlineStyle: 'none' } as any,
     }),
   },
+  // ─── Genre chips ──────────────────────────────────────────
+  genreTrack: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.md,
+    ...Platform.select({
+      web: {
+        overflowX: 'auto',
+        overflowY: 'hidden',
+        scrollbarWidth: 'none',
+        msOverflowStyle: 'none',
+        WebkitOverflowScrolling: 'touch',
+      } as any,
+      default: {},
+    }),
+  },
+  genreChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.pill,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    ...Platform.select({
+      web: {
+        cursor: 'pointer',
+        userSelect: 'none',
+        whiteSpace: 'nowrap',
+        flexShrink: 0,
+        transition: 'background-color 0.2s ease, border-color 0.2s ease, transform 0.1s ease',
+      } as any,
+      default: {},
+    }),
+  },
+  genreChipActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primaryLight,
+  },
+  genreChipText: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '500',
+    color: Colors.textSecondary,
+  },
+  genreChipTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  // ─── Sections ─────────────────────────────────────────────
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -240,6 +293,7 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     color: Colors.textTertiary,
   },
+  // ─── Grid ─────────────────────────────────────────────────
   gridContent: {
     paddingHorizontal: Spacing.md,
     paddingBottom: 100,
@@ -274,32 +328,5 @@ const styles = StyleSheet.create({
     color: Colors.textTertiary,
     textAlign: 'center',
     marginTop: Spacing.sm,
-  },
-  genresContainer: {
-    marginBottom: Spacing.md,
-    flexGrow: 0,
-    ...Platform.select({
-      web: { scrollbarWidth: 'none', msOverflowStyle: 'none' } as any,
-    }),
-  },
-  genreTab: {
-    ...Typography.bodySmall,
-    color: Colors.textSecondary,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    whiteSpace: 'nowrap',
-    ...Platform.select({
-      web: { cursor: 'pointer', userSelect: 'none' } as any,
-    }),
-  },
-  genreTabActive: {
-    color: Colors.textPrimary,
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primaryLight,
-    fontWeight: 'bold',
   },
 });
